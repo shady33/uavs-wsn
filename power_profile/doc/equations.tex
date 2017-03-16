@@ -1,0 +1,73 @@
+\documentclass{article}
+
+\begin{document}
+
+\centerline{\sc \huge Power Profile}
+
+
+\begin{center}
+	\large{Power consumption for a node}
+\end{center}
+
+\begin{center}
+	Global Constants
+\end{center}
+
+Power required to turn on mcu,sensor and radio \\
+$(P_{off \to on})_{mcu}$,
+$(P_{off \to on})_{sensor}$,
+$(P_{off \to on})_{radio}$
+\\
+
+Power in idle state for mcu,sensors and the idle and receive state for radio \\
+$(P_{idle})_{mcu}$,
+$(P_{idle})_{sensor}$,
+$(P_{idle})_{radio}$,
+$(P_{rx})_{radio}$
+\\
+
+Power for different modes and switching between them \\
+$(P_{on \to sleep})_{mcu}$,
+$(P_{sleep})_{sensor}$,
+$(P_{sleep \to on})_{mcu}$,
+$(P_{sleep \to on})_{radio}$
+\\
+
+Power for procssing packet, sending packet and reading sensor \\
+$P_{procss\_packet}$,
+$P_{send\_packet}$,
+$P_{read\_sensor}$
+\\
+
+\center{Functions/Equations}
+\begin{description}
+	
+	\item[Turn On Node] $(P_{total})_{node}$ = $(P_{off \to on})_{mcu}$ + $(P_{off \to on})_{sensor}$ + $(P_{off \to on})_{radio}$ 
+	\item[Idle State] $P_{idle\_state}$ = $P_{mcu\_state}$ + $P_{radio\_state}$ + $P_{sensor\_state}$ \\
+		\begin{description}
+			\item[MCU] $P_{mcu\_state}$ = $(P_{idle})_{mcu} $
+			\item[Radio] $P_{radio\_state}$ = RX * $(P_{rx})_{radio}$ + (1 -RX) * $(P_{idle})_{radio}$
+			\item[Sensor] $P_{sensor\_state}$ = $(P_{idle})_{sensor} $
+		\end{description}
+	\item[Sleep Node] $P_{sleep}$ = $P_{mcu\_state}$ + $P_{radio\_state}$ + $P_{sensor\_state}$ \\
+		\begin{description}
+			\item[MCU] $P_{mcu\_state}$ = $(P_{on \to sleep})_{mcu}$ + $(P_{sleep})_{mcu}$
+			\item[Radio] $P_{radio\_state}$ = $(P_{on \to sleep})_{radio}$ + $(P_{sleep})_{radio}$
+			\item[Sensor] $P_{sensor\_state}$ = 0
+		\end{description}
+	\item[Wakeup Node] $P_{wakeup}$ = $P_{mcu\_state}$ + $P_{radio\_state}$ + $P_{sensor\_state}$ \\
+		\begin{description}
+			\item[MCU] $P_{mcu\_state}$ = $(P_{sleep \to on})_{mcu}$
+			\item[Radio] $P_{radio\_state}$ = $(P_{sleep \to on})_{radio}$
+			\item[Sensor] $P_{sensor\_state}$ = $(P_{off \to on})_{sensor}$
+		\end{description}
+	\item[Sense Send Message] $P_{message}$ = $P_{mcu\_state}$ + $P_{radio\_state}$ + $P_{sensor\_state}$ \\
+		\begin{description}
+			\item[MCU] $P_{mcu\_state}$ = $P_{procss\_packet}$
+			\item[Radio] $P_{radio\_state}$ = $P_{send\_packet}$
+			\item[Sensor] $P_{sensor\_state}$ = $P_{read\_sensor}$
+		\end{description}
+\end{description}
+
+RX = Whether Radio in Recieve state or idle state
+\end{document}

@@ -18,10 +18,10 @@ function define_constants()
     P_sleep_on_mcu = 0;
     P_sleep_on_radio = 0;
 
-    global P_process_packet P_send_packet P_read_environment;
+    global P_process_packet P_send_packet P_read_sensor;
     P_process_packet = 0;
     P_send_packet = 0;
-    P_read_environment = 0;
+    P_read_sensor = 0;
 end
 
 
@@ -61,10 +61,10 @@ end
 
 function p_message = sense_send_message()
     P_mcu_state = P_process_packet;
-    P_radio = P_send_packet;
-    P_sensor = P_read_environment;
+    P_radio_state = P_send_packet;
+    P_sensor_state = P_read_sensor;
     
-    p_message = P_mcu_state + P_radio + P_sensor;
+    p_message = P_mcu_state + P_radio_state + P_sensor_state;
 end
 
 
