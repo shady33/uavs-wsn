@@ -41,6 +41,9 @@ $P_{send\_packet}$,
 $P_{read\_sensor}$
 \\
 
+An array of total Power of the node over time and the time at which the power changes
+$P_{total}$, timex
+
 \center{Functions/Equations}
 \begin{description}
 	
@@ -51,6 +54,7 @@ $P_{read\_sensor}$
 			\item[Radio] $P_{radio\_state}$ = RX * $(P_{rx})_{radio}$ + (1 -RX) * $(P_{idle})_{radio}$
 			\item[Sensor] $P_{sensor\_state}$ = $(P_{idle})_{sensor} $
 		\end{description}
+	RX = Whether Radio in Recieve state or idle state
 	\item[Sleep Node] $P_{sleep}$ = $P_{mcu\_state}$ + $P_{radio\_state}$ + $P_{sensor\_state}$ \\
 		\begin{description}
 			\item[MCU] $P_{mcu\_state}$ = $(P_{on \to sleep})_{mcu}$ + $(P_{sleep})_{mcu}$
@@ -69,7 +73,9 @@ $P_{read\_sensor}$
 			\item[Radio] $P_{radio\_state}$ = $P_{send\_packet}$
 			\item[Sensor] $P_{sensor\_state}$ = $P_{read\_sensor}$
 		\end{description}
+	\item[Update Power] $P_{total_i+1} = P_{total_i} + P_{consumed}$
+	\item
 \end{description}
 
-RX = Whether Radio in Recieve state or idle state
+
 \end{document}

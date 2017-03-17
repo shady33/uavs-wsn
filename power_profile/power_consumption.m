@@ -1,18 +1,21 @@
 % Calculating total power of every node
 
-global P_total_power timex;
+clear all;
+
+global P_total timex;
 define_constants();
 update_power(turn_on_node(),0,1);
-update_power(sense_send_message(),0,3);
-update_power(sleep_node(),0,5);
-update_power(wakeup_node(),0,12);
-update_power(sense_send_message(),0,15);
-update_power(idle_state(1),0,18);
-
-plot(timex,P_total_power);
+update_power(sense_send_message(),0,2);
+update_power(sleep_node(),0,2);
+update_power(wakeup_node(),0,4);
+update_power(sense_send_message(),0,9);
+update_power(idle_state(1),0,4);
+update_power(idle_state(1),20,2);
+plot(timex,P_total);
+xlabel('time');
+ylabel('Power over time');
 
 function define_constants()
-    clear all;
     disp('Defining Constants');
     global P_off_on_mcu P_off_on_sensor P_off_on_radio;
     P_off_on_mcu = 2;
@@ -38,8 +41,8 @@ function define_constants()
     P_send_packet = 9;
     P_read_sensor = 4;
     
-    global P_total_power timex;
-    P_total_power(1) = 100;
+    global P_total timex;
+    P_total(1) = 100;
     timex(1) = 0;
 end
 
@@ -94,11 +97,10 @@ function p_message = sense_send_message()
     p_message = P_mcu_state + P_radio_state + P_sensor_state;
 end
 
-function update_power(power_sub,power_add,time_x)
-    global P_total_power timex;
-    P_total_power(length(P_total_power) + 1) = P_total_power(length(P_total_power)) - power_sub + power_add;
-    timex(length(P_total_power)) = time_x;
-
+function update_power(power_sub,power_add,time_elapsed)
+    global P_total timex;
+    P_total(length(P_total) + 1) = P_total(length(P_total)) - power_sub + power_add;
+    timex(length(P_total)) = timex(length(P_total)-1) + time_elapsed;
 end
 
 
