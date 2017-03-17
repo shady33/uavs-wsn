@@ -28,8 +28,10 @@ $(P_{rx})_{radio}$
 
 Power for different modes and switching between them \\
 $(P_{on \to sleep})_{mcu}$,
-$(P_{sleep})_{sensor}$,
+$(P_{sleep})_{mcu}$,
 $(P_{sleep \to on})_{mcu}$,
+$(P_{on \to sleep})_{radio}$,
+$(P_{sleep})_{radio}$,
 $(P_{sleep \to on})_{radio}$
 \\
 
@@ -42,7 +44,7 @@ $P_{read\_sensor}$
 \center{Functions/Equations}
 \begin{description}
 	
-	\item[Turn On Node] $(P_{total})_{node}$ = $(P_{off \to on})_{mcu}$ + $(P_{off \to on})_{sensor}$ + $(P_{off \to on})_{radio}$ 
+	\item[Turn On Node] $(P_{on})_{node}$ = $(P_{off \to on})_{mcu}$ + $(P_{off \to on})_{sensor}$ + $(P_{off \to on})_{radio}$ 
 	\item[Idle State] $P_{idle\_state}$ = $P_{mcu\_state}$ + $P_{radio\_state}$ + $P_{sensor\_state}$ \\
 		\begin{description}
 			\item[MCU] $P_{mcu\_state}$ = $(P_{idle})_{mcu} $
