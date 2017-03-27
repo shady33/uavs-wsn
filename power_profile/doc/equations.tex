@@ -13,10 +13,11 @@
 	Global Constants
 \end{center}
 
-Power required to turn on mcu,sensor and radio \\
+Power required to turn on mcu,sensor and to change between rx and tx of radio \\
 $(P_{off \to on})_{mcu}$,
 $(P_{off \to on})_{sensor}$,
-$(P_{off \to on})_{radio}$
+$(P_{rx \to tx})_{radio}$
+$(P_{tx \to rx})_{radio}$
 \\
 
 Power in idle state for mcu,sensors and the idle and receive state for radio \\
@@ -48,7 +49,8 @@ $P_{total}$, timex
 The following modes $P_{mode}$ have been used
 \begin{itemize}
 	\item SENSE\_SEND = 7
-	\item ON = 5
+	\item ON = 6
+	\item TX = 5
 	\item RECIEVE = 4
 	\item IDLE = 3
 	\item SLEEP = 2
@@ -58,34 +60,34 @@ The following modes $P_{mode}$ have been used
 \center{Functions/Equations}
 \begin{description}
 	
-	\item[Turn On Node] $(P_{on})_{node}$ = $(P_{off \to on})_{mcu}$ + $(P_{off \to on})_{sensor}$ + $(P_{off \to on})_{radio}$ 
+	\item[Turn On Node] $(P_{on})_{node}$ = $(P_{off \to on})_{mcu}$
 	\item[Idle State] $P_{idle\_state}$ = $P_{mcu\_state}$ + $P_{radio\_state}$ + $P_{sensor\_state}$ \\
 		\begin{description}
 			\item[MCU] $P_{mcu\_state}$ = $(P_{idle})_{mcu} $
 			\item[Radio] $P_{radio\_state}$ = RX * $(P_{rx})_{radio}$ + (1 -RX) * $(P_{idle})_{radio}$
-			\item[Sensor] $P_{sensor\_state}$ = $(P_{idle})_{sensor} $
 		\end{description}
 	RX = Whether Radio in Recieve state or idle state
 	\item[Sleep Node] $P_{sleep}$ = $P_{mcu\_state}$ + $P_{radio\_state}$ + $P_{sensor\_state}$ \\
 		\begin{description}
-			\item[MCU] $P_{mcu\_state}$ = $(P_{on \to sleep})_{mcu}$ + $(P_{sleep})_{mcu}$
-			\item[Radio] $P_{radio\_state}$ = $(P_{on \to sleep})_{radio}$ + $(P_{sleep})_{radio}$
+			\item[MCU] $P_{mcu\_state}$ = $(P_{on \to sleep})_{mcu}$
+			\item[Radio] $P_{radio\_state}$ = $(P_{on \to sleep})_{radio}$
 			\item[Sensor] $P_{sensor\_state}$ = 0
 		\end{description}
 	\item[Wakeup Node] $P_{wakeup}$ = $P_{mcu\_state}$ + $P_{radio\_state}$ + $P_{sensor\_state}$ \\
 		\begin{description}
 			\item[MCU] $P_{mcu\_state}$ = $(P_{sleep \to on})_{mcu}$
 			\item[Radio] $P_{radio\_state}$ = $(P_{sleep \to on})_{radio}$
-			\item[Sensor] $P_{sensor\_state}$ = $(P_{off \to on})_{sensor}$
+			\item[Sensor] $P_{sensor\_state}$ = 0
 		\end{description}
 	\item[Sense Send Message] $P_{message}$ = $P_{mcu\_state}$ + $P_{radio\_state}$ + $P_{sensor\_state}$ \\
 		\begin{description}
 			\item[MCU] $P_{mcu\_state}$ = $P_{procss\_packet}$
 			\item[Radio] $P_{radio\_state}$ = $P_{send\_packet}$
-			\item[Sensor] $P_{sensor\_state}$ = $P_{read\_sensor}$
+			\item[Sensor] $P_{sensor\_state}$ = $(P_{off \to on})_{sensor}$ + $P_{read\_sensor}$
 		\end{description}
+	\item[Switch TX RX] $P_{switch}$ = MODE * $(P_{tx \to rx})_{radio}$ + (1 - MODE) * $(P_{rx \to tx})_{radio}$
+	MODE = $0(RX \to TX)/1(TX \to RX)$
 	\item[Update Power] $P_{total_i+1} = P_{total_i} + P_{consumed}$
-	\item
 \end{description}
 
 
