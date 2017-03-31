@@ -42,6 +42,7 @@ function demoMAC()
     plot(timex,P_needed,'o-');
     xlabel('time (ms)');
     ylabel('Power (mW)');
+    axis([0 10 0 500]);
     P_needed
     timex
 %     trapz(timex,P_needed); % Energy needed!
