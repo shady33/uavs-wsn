@@ -1,5 +1,7 @@
 % Calculating total power of one node
-
+% Startup Current - 20mV/10
+% Radio ON Peak - 26.5mV/10
+% Radio in CCA/NOT off - 20mV/10
 demoMAC()
 
 % function TSCHMAC()
@@ -73,7 +75,7 @@ function define_constants()
 
     global P_process_packet P_send_packet P_read_sensor;
     P_process_packet = 1 * VDD;
-    P_send_packet = 24 * VDD;
+    P_send_packet = 26 * VDD;
     P_read_sensor = 55; 
     
     global P_total timex P_mode;
