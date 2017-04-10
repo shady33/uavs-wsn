@@ -1,4 +1,6 @@
 \documentclass{article}
+\usepackage{graphicx}
+\graphicspath{ {images/} }
 
 \begin{document}
 
@@ -90,5 +92,22 @@ The following modes $P_{mode}$ have been used
 	\item[Update Power] $P_{total_i+1} = P_{total_i} + P_{consumed}$
 \end{description}
 
+
+
+\large{Power Profile from Node}
+\begin{itemize}
+	\item Turn on node without radio
+	\item Init/Leds testing
+	\item While Loop
+	\begin{itemize}
+		\item Turn radio on
+		\item CCA
+		\item Send Message(3Bytes*100packets)
+		\item Turn off
+		\item CCA
+	\end{itemize}
+\end{itemize}
+
+\includegraphics[scale=0.5]{power_profile}
 
 \end{document}
