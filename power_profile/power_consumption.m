@@ -1,7 +1,7 @@
 % Calculating total power of one node
-% Startup Current - 20mV/10
-% Radio ON Peak - 26.5mV/10
-% Radio in CCA/NOT off - 20mV/10
+% Current values are in mA, Voltage is in Volts and Power is in mVA, time
+% is in Seconds
+
 demoMAC()
 
 % function TSCHMAC()
@@ -16,10 +16,29 @@ demoMAC()
 %     
 % end
 
+function val = toState(mode)
+    global ON IDLE RECIEVE SLEEP OFF SENSE_SEND TX;
+    switch mode
+        case ON
+            val = 'On';
+        case IDLE
+            val = 'Idle';
+        case RECIEVE
+            val = 'RX';
+        case SLEEP
+            val = 'Sleep';
+        case OFF
+            val = 'Off';
+        case SENSE_SEND
+            val = 'SenseSend';
+        case TX
+            val = 'TX';
+    end
+end
 function demoMAC()
     clear all;
 
-    global P_total timex P_mode P_needed;
+    global P_total timex P_mode P_needed VDD;
     define_constants();
     update_power(0,0,0.1);
     update_power(turn_on_node(),0,0.340);
@@ -36,52 +55,60 @@ function demoMAC()
 %     plot(timex,P_total);
 %     xlabel('time');
 %     ylabel('Power changes');
-    subplot(2,1,1)
-    stairs(timex,P_mode);
-    xlabel('time');
-    ylabel('Mode');
-    subplot(2,1,2)
-    plot(timex,P_needed,'o-');
+%     subplot(2,1,1)
+%     stairs(timex,P_mode);
+%     xlabel('time');
+%     ylabel('Mode');
+%     subplot(2,1,2)
+     hold on;
+    stairs(timex,P_needed,'o-');
+    stairs(timex,(P_needed/VDD),'r-');
+    hold off;
     xlabel('time (ms)');
-    ylabel('Power (mW)');
-    axis([0 10 0 500]);
-    P_needed
-    timex
+    ylabel('Power (mW)/ Current(mA)');
+    
+    
+    
+    for n=1:((size(timex,2)/2) - 1)
+        text(timex(n*2),P_needed(n*2),toState(P_mode(n)),'FontSize', 20)
+	end
 %     trapz(timex,P_needed); % Energy needed!
 end
 
 function define_constants()
     disp('Defining Constants');
+    global VDD;
     VDD = 3;
     global P_off_on_mcu P_off_on_sensor P_rx_tx_radio P_tx_rx_radio;
-    P_off_on_mcu = 140 * VDD; % Node in RX State
+    P_off_on_mcu = 30 * VDD; % Node in RX State
     P_off_on_sensor = 0;
-    P_rx_tx_radio = 36 * VDD; % RX to TX
-    P_tx_rx_radio = 36 * VDD; % TX to RX
+    P_rx_tx_radio = 1 * VDD; % RX to TX
+    P_tx_rx_radio = 1 * VDD; % TX to RX
     
-    global P_idle_mcu P_rx_radio P_idle_radio P_idle_sensor;
-    P_idle_mcu = 13 * VDD; % 32-MHz XOSC running. No radio or peripherals active. CPU running at 32-MHz with flash access
+    global P_idle_mcu P_rx_radio P_idle_sensor P_idle_radio;
+    P_idle_mcu = 0.6 * VDD; % 32-MHz XOSC running. No radio or peripherals active. CPU running at 32-MHz with flash access
     P_rx_radio = 20 * VDD; % 32-MHz XOSC running, radio in RX mode, –50-dBm input power, no peripherals active, CPU idle
-    P_idle_radio = 0;
     P_idle_sensor = 0;
+    P_idle_radio = 0;
 
     global P_on_sleep_mcu P_sleep_mcu P_sleep_on_mcu P_on_sleep_radio P_sleep_radio P_sleep_on_radio;
-    P_on_sleep_mcu = 31.07 * VDD; % Mode 2
-    P_sleep_mcu = 0.4 * 10^(-3) * VDD;
-    P_sleep_on_mcu = 140 * VDD;
+    P_on_sleep_mcu = 1 * VDD; % Power Mode 2
+    P_sleep_mcu = 1.3 * 10^(-3) * VDD;
+    P_sleep_on_mcu = 15 * VDD;
     P_on_sleep_radio = 0;
     P_sleep_radio = 0;
     P_sleep_on_radio = 0;
 
     global P_process_packet P_send_packet P_read_sensor;
     P_process_packet = 1 * VDD;
-    P_send_packet = 26 * VDD;
+    P_send_packet = 24 * VDD;
     P_read_sensor = 55; 
     
-    global P_total timex P_mode;
+    global P_total timex P_mode P_needed;
     P_total(1) = 100;
     timex(1) = 0;
     P_mode(1) = 0;
+    P_needed(1) = 0;
     
     global ON IDLE RECIEVE SLEEP OFF SENSE_SEND TX;
     ON = 6;
@@ -109,13 +136,13 @@ function p_idle_state = idle_state(RX) % RX = 1(Radio in receive state), RX = 0(
     end
     P_mcu_state = P_idle_mcu; % Remain in idle state
     P_radio_state = RX * P_rx_radio + (1 - RX) * P_idle_radio; % RX Power in Idle state
-                                                               % Radio in Idle mode 
+                                                               % Radio in TX mode 
                                                                
     p_idle_state = P_mcu_state + P_radio_state;
 end
 
 function p_sleep = sleep_node()
-    global P_on_sleep_mcu P_on_sleep_radio P_sleep_radio P_mode SLEEP;
+    global P_on_sleep_mcu P_on_sleep_radio P_mode SLEEP;
     
     P_mode(length(P_mode) + 1) = SLEEP;
     P_mcu_state = P_on_sleep_mcu; % MCU to sleep state
@@ -164,12 +191,23 @@ end
 %           time_elapsed - time since last change was called
 function update_power(power_sub,power_add,time_elapsed)
     global P_total timex P_needed P_mode;
-    P_total(length(P_total) + 1) = P_total(length(P_total)) - power_sub + power_add;
-    P_needed(length(P_total)) = power_sub;
-    timex(length(P_total)) = timex(length(P_total)-1) + time_elapsed;
-    if power_sub == 0 && power_add == 0
-        P_mode(length(P_total)) = P_mode(length(P_total) - 1);
-    end
+    
+    P_needed(length(P_needed) + 1) = power_sub;
+    timex(length(P_needed)) = timex(length(P_needed)-1);
+    
+    P_needed(length(P_needed) + 1) = power_sub;
+    timex(length(P_needed)) = timex(length(P_needed)-1) + time_elapsed;
+    
+%     P_total(length(P_total) + 1) = P_total(length(P_total)) - power_sub + power_add;
+%     
+%     P_needed(length(P_needed) + 1) = power_sub;
+%     timex(length(P_needed)) = timex(length(P_needed)-1);
+%     
+%     P_needed(length(P_needed) + 1) = power_sub;
+% %     timex(length(P_needed)) = timex(length(P_needed)-1) + time_elapsed;
+%       if power_sub == 0 && power_add == 0
+%         P_mode(length(P_needed)) = P_mode(length(P_needed));
+%       end
 end
 
 
