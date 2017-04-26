@@ -38,27 +38,142 @@
  */
 
 #include "contiki.h"
+#include "cfs/cfs.h"
+#include "cfs/cfs-coffee.h"
+#include "dev/button-sensor.h"
+#include "dev/leds.h"
 #include "net/rime/rime.h"
+#include "net/netstack.h"
 #include "powertrace.h"
+#include "sys/ctimer.h"
 
 #include <stdio.h> /* For printf() */
 
 #define MAX_RETRANSMISSIONS 1
+#define NUMPACKETS 15
+#define DRONE0 0x9F
+#define DRONE1 0x58
+#define COORD0 0xEC
+#define COORD1 0xB6
+
+#define FILENAME "packets"
+// #define DRONE0 0x0A
+// #define DRONE1 0x00
+// #define COORD0 0x05
+// #define COORD1 0x00
 
 /*---------------------------------------------------------------------------*/
 PROCESS(main_process, "Main process");
+PROCESS(send_C_D, "Send Coordinator to Drone process");
+PROCESS(button_press, "Wait for Button Press Event");
 AUTOSTART_PROCESSES(&main_process);
 /*---------------------------------------------------------------------------*/
 static struct unicast_conn uc;
-static struct unicast_conn uc_drone;
+// static struct unicast_conn uc_drone;
+static struct broadcast_conn uc_drone;
 int is_drone = 0;
 int is_coordinator = 0;
-int send_data = 0;
+int is_sensor = 0;
 volatile int sending = 0;
+volatile int recieving = 0;
 volatile int i = 0;
-volatile int num_packets = 10;
-char payload[10];
+volatile int num_packets = NUMPACKETS;
 volatile int allowed_to_send = 1;
+volatile uint16_t packets_received = 0;
+volatile uint16_t packets_sent = 0;
+static struct ctimer timer;
+volatile int read_since_reset = 0;
+struct record {
+    uint16_t recv;
+    uint16_t sent;
+}record;
+char payload[10];
+
+ /*---------------------------------------------------------------------------*/
+static void callback(void *ptr)
+{
+   ctimer_stop(&timer);
+   printf("Inside timer\n");
+   allowed_to_send = 1;
+} 
+/*---------------------------------------------------------------------------*/
+PROCESS_THREAD(button_press,ev,data){
+  PROCESS_BEGIN();
+  
+  int fd;
+  int r;
+
+  while(1){
+    PROCESS_WAIT_EVENT_UNTIL(ev == sensors_event && data == &button_sensor);
+    if(read_since_reset == 0){
+      fd = cfs_open(FILENAME, CFS_READ);
+      if(fd < 0) {
+        printf("failed to open %s\n", FILENAME);
+      }else{
+        printf("Reading first time %d\n",fd);  
+        r = cfs_read(fd, &record, sizeof(record));
+        if(r == 0) {
+          printf("New one\n");
+        } else if(r < sizeof(record)) { /* 0x00 Error */ 
+          printf("failed to read %d bytes from %s, recv %d sent %d\n",
+             (int)sizeof(record), FILENAME, record.recv,record.sent);
+          packets_received = packets_received + record.recv;
+          packets_sent = packets_sent + record.sent;
+        }else{
+          packets_received = packets_received + record.recv;
+          packets_sent = packets_sent + record.sent;
+          printf("Read %d %d\n",packets_received,packets_sent);
+        }
+        cfs_close(fd);
+      }
+      read_since_reset = 1;
+    }
+
+    record.recv = packets_received;
+    record.sent = packets_sent;
+
+    fd = cfs_open(FILENAME, CFS_READ | CFS_WRITE);
+    if(fd < 0) {
+      printf("failed to open %s\n", FILENAME);
+    }
+    r = cfs_write(fd, &record, sizeof(record));
+    if(r != sizeof(record)) {
+      printf("failed to write %d bytes to %s,written %d\n",
+       (int)sizeof(record), FILENAME,r);
+    }
+    printf("Received Packets: %d, Sent Packets: %d\n", packets_received,packets_sent);
+    cfs_close(fd);
+  }
+  PROCESS_END();
+}
+/*---------------------------------------------------------------------------*/
+PROCESS_THREAD(send_C_D, ev, data){
+    PROCESS_BEGIN();
+    linkaddr_t addr;
+    addr.u8[0] = DRONE0;
+    addr.u8[1] = DRONE1;
+    static struct etimer et;
+    while(num_packets > 0){
+        // etimer_set(&et, CLOCK_SECOND * 1);
+        // PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+
+        printf("Sending Data\n");
+        memset(payload,num_packets,10);
+        memcpy(payload,"abcdDATA",8);
+        packetbuf_copyfrom(payload, 10);
+        sending = 1;
+        // if(unicast_send(&uc_drone,&addr) != 0){
+        if(broadcast_send(&uc_drone) != 0){
+            if (num_packets == 0){
+
+            }else{
+                printf("%d\n",num_packets);
+                num_packets--;
+            }
+        }
+    }
+    PROCESS_END();
+}
 /*---------------------------------------------------------------------------*/
 static void
 recv_uc(struct unicast_conn *c, const linkaddr_t *from)//, uint8_t seqno)
@@ -79,138 +194,144 @@ sent_uc(struct unicast_conn *c,  int status, int num_tx)
 }
 /*---------------------------------------------------------------------------*/
 static void
-recv_drone_uc(struct unicast_conn *c, const linkaddr_t *from)//, uint8_t seqno)
+recv_drone_uc(struct broadcast_conn *c, const linkaddr_t *from)//, uint8_t seqno)
 {
-  
-  // char *payload_recv;
-  // payload = (char*)malloc(10);
   int d = packetbuf_copyto(payload);
-    // int d = 0;
+ 
   printf("message received from %d.%d length %d Drone\n",
      from->u8[0], from->u8[1],d);
-
-  if(is_drone && from->u8[0]==5 && from->u8[1]==0){
-    allowed_to_send = 0;
+  leds_toggle(LEDS_GREEN);
+  if(is_drone){// && from->u8[0]==coordinator0 && from->u8[1]==coordinator1){
+    packets_received++;
+    // if(packets_received == NUMPACKETS){
+    //     allowed_to_send = 1;
+    //     packets_received = 0;
+    //     ctimer_stop(&timer);
+    // }else{
+    //     ctimer_restart(&timer);
+    //     ctimer_set(&timer, CLOCK_SECOND * 10, callback, NULL);
+    //     allowed_to_send = 0;            
+    // }
   }
 
-  if(is_coordinator && from->u8[0]==10 && from->u8[1]==0){
+  if(is_coordinator){// && from->u8[0]==drone0 && from->u8[1]==drone1){
     if(num_packets > 0){
-        printf("Switching send data\n");
-        send_data = 1;
+        process_start(&send_C_D,NULL);
+    }else{
+      num_packets = NUMPACKETS;
+      process_start(&send_C_D,NULL);
     }
   }
-  // free(payload);
 }
 /*---------------------------------------------------------------------------*/
 static void
-sent_drone_uc(struct unicast_conn *c,  int status, int num_tx)
-// sent_uc(struct unicast_conn *c, const linkaddr_t *to, uint8_t retransmissions)
+sent_drone_uc(struct broadcast_conn *c,  int status, int num_tx)
+// sent_drone_uc(struct unicast_conn *c, const linkaddr_t *to, uint8_t num_tx)
 {
-  printf("runicast messasge sent status:%d, transmission_num %d Drone\n",
-     status, num_tx);
+  printf("runicast messasge sent transmission_num %d Drone\n",
+    num_tx);
+  leds_toggle(LEDS_YELLOW);
+  packets_sent++;
   sending = 0;
 }
 /*---------------------------------------------------------------------------*/
-static const struct unicast_callbacks unicast_callbacks = {recv_uc, sent_uc};
-static const struct unicast_callbacks drone_callbacks = {recv_drone_uc, sent_drone_uc};
+static const struct unicast_callbacks sensor_callbacks = {recv_uc, sent_uc};
+static const struct broadcast_callbacks drone_callbacks = {recv_drone_uc, sent_drone_uc};
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(main_process, ev, data)
 {
   PROCESS_EXITHANDLER(unicast_close(&uc);)
+  PROCESS_EXITHANDLER(broadcast_close(&uc_drone);)
 
   PROCESS_BEGIN();
   
+  #if NEED_FORMATTING
+    cfs_coffee_format();
+  #endif
+
   // powertrace_start(CLOCK_SECOND * 2);
 
   printf("Hello, Laksh\n");
 
   /* Receiver node: do nothing */
-  if(linkaddr_node_addr.u8[0] == 5 &&
-     linkaddr_node_addr.u8[1] == 0) {
+  if(linkaddr_node_addr.u8[0] == COORD0 &&
+     linkaddr_node_addr.u8[1] == COORD1) {
     is_coordinator = 1;
+    leds_on(LEDS_RED);
   }
     
-  if(linkaddr_node_addr.u8[0] == 10 &&
-     linkaddr_node_addr.u8[1] == 0) {
+  if(linkaddr_node_addr.u8[0] == DRONE0 &&
+     linkaddr_node_addr.u8[1] == DRONE1) {
     is_drone = 1;
+    leds_on(LEDS_ORANGE);
+  }
+
+  if(!is_drone && !is_coordinator){
+    is_sensor = 1;
+    leds_on(LEDS_GREEN);
   }
 
   if(is_drone){
-    unicast_open(&uc_drone, 137, &drone_callbacks);  
+    broadcast_open(&uc_drone, 137, &drone_callbacks);
+    // unicast_open(&uc_drone, 137, &drone_callbacks);
+    NETSTACK_RADIO.set_value(RADIO_PARAM_CHANNEL,11);
   }else if(is_coordinator){
-    unicast_open(&uc_drone, 137, &drone_callbacks);  
-    unicast_open(&uc, 146, &unicast_callbacks);  
+    broadcast_open(&uc_drone, 137, &drone_callbacks);
+    // unicast_open(&uc_drone, 137, &drone_callbacks); 
+    unicast_open(&uc, 146, &sensor_callbacks);  
   }else{
-    unicast_open(&uc, 146, &unicast_callbacks);  
+    unicast_open(&uc, 146, &sensor_callbacks);  
   }
+  
+  SENSORS_ACTIVATE(button_sensor);
+  NETSTACK_RADIO.set_value(RADIO_PARAM_TXPOWER,-24);
+  process_start(&button_press,NULL);
   
   while(1) {
     static struct etimer et;   
     linkaddr_t addr;
     
     if(is_drone && !is_coordinator){
-        if(allowed_to_send == 1){
-            etimer_set(&et, CLOCK_SECOND * 4);
-        }else{
-            allowed_to_send = 1;
-            etimer_set(&et, CLOCK_SECOND * 60);
-        }
-    }else if(!is_drone && is_coordinator){
-        if(send_data == 0){
-            etimer_set(&et, CLOCK_SECOND);
-        }else{
-            etimer_set(&et, CLOCK_SECOND * 0.1);
-        }
-    }else {
+        etimer_set(&et, CLOCK_SECOND * 10);
+    }else if(is_sensor){
         etimer_set(&et, CLOCK_SECOND * 30);
+    }else {
+       break; /* Coordinator*/
     }
 
     PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
 
-    // if(!runicast_is_transmitting(&uc)) {
     if(!sending){
         if(is_drone && !is_coordinator) {
-            memset(payload,i,10);
-            memcpy(payload,"IAMDRONE",8);
-            packetbuf_copyfrom(payload, 10);
-            
-            addr.u8[0] = 5;
-            addr.u8[1] = 0;
-            sending = 1;
-            i = i + 1;
-            if(unicast_send(&uc_drone, &addr) != 0){
+            if(allowed_to_send){
                 printf("Sending I am Drone\n");
-            }
-
-        } else if(!is_drone && is_coordinator){
-            if(send_data){
-                printf("Sending Data\n");
-                memset(payload,num_packets,10);
-                memcpy(payload,"abcdDATA",8);
+                memset(payload,i,10);
+                memcpy(payload,"IAMDRONE",8);
                 packetbuf_copyfrom(payload, 10);
-                addr.u8[0] = 10;
-                addr.u8[1] = 0;
+                
+                addr.u8[0] = COORD0;
+                addr.u8[1] = COORD1;
                 sending = 1;
-                if(unicast_send(&uc_drone, &addr) != 0){
-                    if (num_packets == 0){
-                        send_data = 0;
-                    }else{
-                        printf("%d %d\n", send_data,num_packets);
-                        num_packets--;
-                    }
-                }
+                i = i + 1;
+                // unicast_send(&uc_drone, &addr);                
+                broadcast_send(&uc_drone);
+            }else{
+                printf("Cannot send\n");
             }
         }else{
             printf("Sending Sensor\n");
             packetbuf_copyfrom("SENSOR", 6);
-            addr.u8[0] = 5;
-            addr.u8[1] = 0;
+            addr.u8[0] = COORD0;
+            addr.u8[1] = COORD1;
             sending = 1;
             unicast_send(&uc, &addr);
         }
     }
+    // if(ev == sensors_event && data == &button_sensor){
+    //   printf("Received Packets: %d, Sent Packets: %d\n", packets_received,packets_sent);    
+    // }
   }
-
+  printf("Exiting Process\n");
   PROCESS_END();
 }
 /*---------------------------------------------------------------------------*/
