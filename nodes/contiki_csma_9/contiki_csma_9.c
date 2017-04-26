@@ -81,21 +81,28 @@ volatile int num_packets = NUMPACKETS;
 volatile int allowed_to_send = 1;
 volatile uint16_t packets_received = 0;
 volatile uint16_t packets_sent = 0;
-static struct ctimer timer;
+// static struct ctimer timer;
 volatile int read_since_reset = 0;
 struct record {
     uint16_t recv;
     uint16_t sent;
 }record;
-char payload[10];
+struct packet{
+    uint16_t sequenceno;
+    uint16_t totalpackets;
+    uint32_t data2;
+    uint64_t data3;
+    uint64_t data4;
+    uint64_t data5;
+}payload;
 
  /*---------------------------------------------------------------------------*/
-static void callback(void *ptr)
-{
-   ctimer_stop(&timer);
-   printf("Inside timer\n");
-   allowed_to_send = 1;
-} 
+// static void callback(void *ptr)
+// {
+//    ctimer_stop(&timer);
+//    printf("Inside timer\n");
+//    allowed_to_send = 1;
+// } 
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(button_press,ev,data){
   PROCESS_BEGIN();
@@ -149,24 +156,22 @@ PROCESS_THREAD(button_press,ev,data){
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(send_C_D, ev, data){
     PROCESS_BEGIN();
-    linkaddr_t addr;
-    addr.u8[0] = DRONE0;
-    addr.u8[1] = DRONE1;
-    static struct etimer et;
+    // linkaddr_t addr;
+    // addr.u8[0] = DRONE0;
+    // addr.u8[1] = DRONE1;
+    // static struct etimer et;
     while(num_packets > 0){
         // etimer_set(&et, CLOCK_SECOND * 1);
         // PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
 
         printf("Sending Data\n");
-        memset(payload,num_packets,10);
-        memcpy(payload,"abcdDATA",8);
-        packetbuf_copyfrom(payload, 10);
+        payload.sequenceno = num_packets;
+        payload.totalpackets = NUMPACKETS;
+        packetbuf_copyfrom(&payload, sizeof(payload));
         sending = 1;
         // if(unicast_send(&uc_drone,&addr) != 0){
         if(broadcast_send(&uc_drone) != 0){
-            if (num_packets == 0){
-
-            }else{
+            if(num_packets != 0){
                 printf("%d\n",num_packets);
                 num_packets--;
             }
@@ -178,7 +183,7 @@ PROCESS_THREAD(send_C_D, ev, data){
 static void
 recv_uc(struct unicast_conn *c, const linkaddr_t *from)//, uint8_t seqno)
 {
-  int d = packetbuf_copyto(payload);
+  int d = packetbuf_copyto(&payload);
     // int d = 0;
   printf("unicast message received from %d.%d length %d\n",
      from->u8[0], from->u8[1],d);
@@ -196,7 +201,7 @@ sent_uc(struct unicast_conn *c,  int status, int num_tx)
 static void
 recv_drone_uc(struct broadcast_conn *c, const linkaddr_t *from)//, uint8_t seqno)
 {
-  int d = packetbuf_copyto(payload);
+  int d = packetbuf_copyto(&payload);
  
   printf("message received from %d.%d length %d Drone\n",
      from->u8[0], from->u8[1],d);
@@ -305,9 +310,9 @@ PROCESS_THREAD(main_process, ev, data)
         if(is_drone && !is_coordinator) {
             if(allowed_to_send){
                 printf("Sending I am Drone\n");
-                memset(payload,i,10);
-                memcpy(payload,"IAMDRONE",8);
-                packetbuf_copyfrom(payload, 10);
+                payload.sequenceno = i;
+                payload.data3 = (uint64_t)"IAMDRONE";
+                packetbuf_copyfrom(&payload, sizeof(payload));
                 
                 addr.u8[0] = COORD0;
                 addr.u8[1] = COORD1;
