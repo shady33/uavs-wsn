@@ -42,19 +42,52 @@
 #include "net/netstack.h"
 #include "random.h"
 #include "dev/leds.h"
+#include "net/rime/rime.h"
+#include "dev/sht21.h"
+#include "sensors.h"
 
 #include <stdio.h> /* For printf() */
 /*---------------------------------------------------------------------------*/
 PROCESS(power_profile_process, "Power profile process");
 AUTOSTART_PROCESSES(&power_profile_process);
+static struct broadcast_conn uc;
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(power_profile_process, ev, data)
 {
 
-  static struct etimer et;
-  char payload[5];
-  memset(payload, 5, sizeof(char)*4);
+  PROCESS_BEGIN();
 
+  static struct etimer et;
+  static uint16_t sht21_present;
+  uint16_t temperature,humidity;
+  char payload[5];
+  memset(payload, 5, sizeof(char)*5);
+  
+  /* Initialize the SHT21 sensor */
+  sht21_present = SENSORS_ACTIVATE(sht21);
+  
+
+  // NETSTACK_RADIO.off();
+  // /* Current for Each LED*/
+  // etimer_set(&et, CLOCK_SECOND * 3);
+  // leds_on(LEDS_RED);
+  // PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+  
+  // etimer_restart(&et);
+  // leds_on(LEDS_GREEN);
+  // PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+  
+  // etimer_restart(&et);
+  // leds_on(LEDS_ORANGE);
+  // PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+  
+  // etimer_restart(&et);
+  // leds_on(LEDS_YELLOW);
+  // PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+  
+  // etimer_restart(&et);
+  // leds_off(LEDS_ALL);
+  // PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
   // static unsigned long last_cpu, last_lpm, last_transmit, last_listen;
   // static unsigned long last_idle_transmit, last_idle_listen;
 
@@ -63,31 +96,65 @@ PROCESS_THREAD(power_profile_process, ev, data)
   // unsigned long idle_transmit, idle_listen;
   // unsigned long all_idle_transmit, all_idle_listen;
 
-  PROCESS_BEGIN();
   
+  // broadcast_open(&uc, 137, NULL);
   // powertrace_start(CLOCK_SECOND * 30);
-  
-  printf("Hello, world\n");
+// lpm_enter();
+// REG(SYS_CTRL_PMCTL) = SYS_CTRL_PMCTL_PM2;
+// do{ asm("wfi"::); } while(0);
 
-  NETSTACK_MAC.off(0);
-  leds_on(LEDS_YELLOW);
+// linkaddr_t addr;
+// addr.u8[0] = 1;
+// addr.u8[1] = 0;
 
-  etimer_set(&et, CLOCK_SECOND * 5 + random_rand() % (CLOCK_SECOND * 5));
+  // etimer_set(&et, CLOCK_SECOND * 5);
+  // PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+while(1){
+  // + random_rand() % (CLOCK_SECOND * 10)
+
+  etimer_set(&et, CLOCK_SECOND * 5);
+  // etimer_restart(&et);
   PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
-  NETSTACK_RADIO.send(payload,5);
-  leds_off(LEDS_YELLOW);
-  leds_on(LEDS_ORANGE);
-
-  etimer_set(&et, CLOCK_SECOND * 5 + random_rand() % (CLOCK_SECOND * 5));
-  PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
-  NETSTACK_RADIO.channel_clear();
+  NETSTACK_RADIO.on();
   leds_off(LEDS_ORANGE);
   leds_on(LEDS_GREEN);
 
-  etimer_set(&et, CLOCK_SECOND * 4 + random_rand() % (CLOCK_SECOND * 4));
+  etimer_restart(&et);
   PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
-  NETSTACK_MAC.off(0);
+  NETSTACK_RADIO.channel_clear();
   leds_off(LEDS_GREEN);
+  leds_on(LEDS_ORANGE);
+
+  etimer_restart(&et);
+  PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));  
+  leds_off(LEDS_ORANGE);
+  leds_on(LEDS_YELLOW);
+  if(sht21_present != SHT21_ERROR) {
+        temperature = sht21.value(SHT21_READ_TEMP);
+        humidity = sht21.value(SHT21_READ_RHUM);
+  }
+  // broadcast_send(&uc);
+  memset(payload,temperature,2);
+  memset(payload,humidity,2);
+  packetbuf_copyfrom(payload, 5);
+  int i;
+  for(i = 0;i < 100;i++){
+    NETSTACK_RADIO.send(payload,5);
+  }
+
+  etimer_restart(&et);
+  PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+  NETSTACK_RADIO.off();
+  leds_off(LEDS_YELLOW);
+  leds_on(LEDS_RED);
+
+  etimer_restart(&et);
+  PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+  NETSTACK_RADIO.channel_clear();
+  leds_off(LEDS_RED);
+  leds_on(LEDS_ORANGE);
+}
+  // leds_off(LEDS_GREEN);
   
   // while(1){
   //   printf("Hello, world\n");

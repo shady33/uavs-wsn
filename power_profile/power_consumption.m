@@ -40,17 +40,31 @@ function demoMAC()
 
     global P_total timex P_mode P_needed VDD;
     define_constants();
-    update_power(0,0,0.1);
+%     update_power(0,0,0.4);
+%     update_power(turn_on_node(),0,0.340);
+%     update_power(turn_on_radio(),0,0.5);
+%     update_power(idle_state(1),0,0.2);
+%     update_power(switch_tx_rx(0),0,0.192);
+%     update_power(sense_send_message(),0,0.5);
+%     update_power(switch_tx_rx(1),0,0.192);
+%     update_power(idle_state(1),0,0.3);
+%     update_power(sleep_node(),0,0.5);
+%     update_power(0,0,0.5);
+
+    update_power(0,0,4);
     update_power(turn_on_node(),0,0.340);
-    update_power(idle_state(1),0,0.2);
+    update_power(turn_on_radio(),0,0.5);
+    update_power(idle_state(1),0,5);
     update_power(switch_tx_rx(0),0,0.192);
-    update_power(sense_send_message(),0,0.5);
+    update_power(sense_send_message(),0,5);
     update_power(switch_tx_rx(1),0,0.192);
-    update_power(idle_state(1),0,0.3);
-    update_power(sleep_node(),0,0.5);
+    update_power(idle_state(0),0,5);
+%     update_power(sleep_node(),0,5);
     update_power(0,0,0.5);
     
     figure
+    data_csv = csvread('PowerProfile.csv');
+    plot(data_csv(:,1),data_csv(:,3),'o-')
 %     subplot(3,1,1)
 %     plot(timex,P_total);
 %     xlabel('time');
@@ -61,17 +75,15 @@ function demoMAC()
 %     ylabel('Mode');
 %     subplot(2,1,2)
      hold on;
-    stairs(timex,P_needed,'o-');
+%      stairs(timex,P_needed,'o-');
     stairs(timex,(P_needed/VDD),'r-');
     hold off;
-    xlabel('time (ms)');
-    ylabel('Power (mW)/ Current(mA)');
-    
-    
+    xlabel('time(s)');
+    ylabel('Current(mA)');
     
     for n=1:((size(timex,2)/2) - 1)
-        text(timex(n*2),P_needed(n*2),toState(P_mode(n)),'FontSize', 20)
-	end
+        text(timex(n*2),P_needed(n*2)/VDD,toState(P_mode(n)),'FontSize', 20)
+    end
 %     trapz(timex,P_needed); % Energy needed!
 end
 
@@ -79,11 +91,12 @@ function define_constants()
     disp('Defining Constants');
     global VDD;
     VDD = 3;
-    global P_off_on_mcu P_off_on_sensor P_rx_tx_radio P_tx_rx_radio;
-    P_off_on_mcu = 30 * VDD; % Node in RX State
+    global P_off_on_mcu P_off_on_sensor P_rx_tx_radio P_tx_rx_radio P_off_on_radio;
+    P_off_on_mcu = 15 * VDD; % Node in RX State
     P_off_on_sensor = 0;
     P_rx_tx_radio = 1 * VDD; % RX to TX
     P_tx_rx_radio = 1 * VDD; % TX to RX
+    P_off_on_radio = P_off_on_mcu + 15 * VDD;
     
     global P_idle_mcu P_rx_radio P_idle_sensor P_idle_radio;
     P_idle_mcu = 0.6 * VDD; % 32-MHz XOSC running. No radio or peripherals active. CPU running at 32-MHz with flash access
@@ -91,18 +104,20 @@ function define_constants()
     P_idle_sensor = 0;
     P_idle_radio = 0;
 
-    global P_on_sleep_mcu P_sleep_mcu P_sleep_on_mcu P_on_sleep_radio P_sleep_radio P_sleep_on_radio;
-    P_on_sleep_mcu = 1 * VDD; % Power Mode 2
-    P_sleep_mcu = 1.3 * 10^(-3) * VDD;
+    global P_on_sleep_mcu P_sleep_on_mcu P_on_sleep_radio P_sleep_radio P_sleep_on_radio;
+    P_on_sleep_mcu = 1 * VDD; 
+%     P_sleep_mcu = 1.3 * 10^(-3) * VDD; % Power Mode 2
     P_sleep_on_mcu = 15 * VDD;
     P_on_sleep_radio = 0;
     P_sleep_radio = 0;
     P_sleep_on_radio = 0;
 
     global P_process_packet P_send_packet P_read_sensor;
-    P_process_packet = 1 * VDD;
+%     P_process_packet = 1 * VDD;
+    P_process_packet = 0;
     P_send_packet = 24 * VDD;
-    P_read_sensor = 55; 
+    P_read_sensor = 0; 
+%     P_read_sensor = 55; 
     
     global P_total timex P_mode P_needed;
     P_total(1) = 100;
@@ -118,6 +133,13 @@ function define_constants()
     SLEEP = 2;
     OFF = 0;
     SENSE_SEND = 7;
+end
+
+function p_on_node = turn_on_radio()
+    global P_off_on_radio P_mode ON;
+    P_mode(length(P_mode) + 1) = ON;
+    
+    p_on_node = P_off_on_radio;
 end
 
 function p_on_node = turn_on_node()
@@ -145,7 +167,7 @@ function p_sleep = sleep_node()
     global P_on_sleep_mcu P_on_sleep_radio P_mode SLEEP;
     
     P_mode(length(P_mode) + 1) = SLEEP;
-    P_mcu_state = P_on_sleep_mcu; % MCU to sleep state
+    P_mcu_state =  P_on_sleep_mcu; % MCU to sleep state
     P_radio_state =  P_on_sleep_radio; % Radio to sleep state
     P_sensor_state = 0; % Cutoff power completely?
     
@@ -175,13 +197,13 @@ function p_message = sense_send_message()
 end
 
 function p_switch = switch_tx_rx(MODE) % MODE = 0(TX),1(RX)
-    global P_tx_rx_radio P_rx_tx_radio P_mode RECIEVE TX;
+    global P_rx_radio P_tx_rx_radio P_rx_tx_radio P_mode RECIEVE TX;
     
     if MODE == 1
-        p_switch = P_tx_rx_radio;
+        p_switch = P_rx_radio + P_tx_rx_radio;
         P_mode(length(P_mode) + 1) = RECIEVE;
     elseif MODE == 0
-        p_switch = P_rx_tx_radio;
+        p_switch = P_rx_radio + P_rx_tx_radio;
         P_mode(length(P_mode) + 1) = TX;
     end
 end

@@ -11,3 +11,6 @@
 #define LPM_CONF_ENABLE       1
 #define LPM_CONF_MAX_PM       2
 #define LPM_CONF_STATS        0
+
+// #define CC2538_CONF_QUIET 1
+// #define CC2538_RF_CONF_TX_POWER 0xFF
