@@ -85,7 +85,6 @@ volatile int sending = 0;
 volatile int recieving = 0;
 volatile int i = 0;
 volatile int num_packets = NUMPACKETS;
-volatile int allowed_to_send = 1;
 volatile uint16_t packets_received = 0;
 volatile uint16_t packets_sent = 0;
 static struct ctimer timer;
@@ -116,7 +115,8 @@ static void callback(void *ptr)
     /* some dropped */
     payload.req_reply = REQSEQ;
     payload.droppedpackets = received_seq;
-    packetbuf_copyfrom(&payload,sizeof(payload))
+    packetbuf_copyfrom(&payload,sizeof(payload));
+    sending = 1;
     if(broadcast_send(&uc_drone) != 0){
       printf("Requested new packets\n");
     }
@@ -179,14 +179,11 @@ PROCESS_THREAD(button_press,ev,data){
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(send_C_D, ev, data){
     PROCESS_BEGIN();
-    linkaddr_t addr;
-    addr.u8[0] = DRONE0;
-    addr.u8[1] = DRONE1;
-    // static struct etimer et;
-    while(num_packets > 0){
-        // etimer_set(&et, CLOCK_SECOND * 1);
-        // PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
-
+    if(data == NULL){
+      // linkaddr_t addr;
+      // addr.u8[0] = DRONE0;
+      // addr.u8[1] = DRONE1;
+      while(num_packets > 0){
         printf("Sending Data\n");
         payload.req_reply = REPLY;
         payload.sequenceno = num_packets;
@@ -196,11 +193,27 @@ PROCESS_THREAD(send_C_D, ev, data){
         // if(runicast_send(&uc_drone_1,&addr,MAX_RETRANSMISSIONS) != 0){
         // if(unicast_send(&uc_drone,&addr) != 0){
         if(broadcast_send(&uc_drone) != 0){
-            if(num_packets != 0){
-                printf("%d\n",num_packets);
-                num_packets--;
-            }
+          if(num_packets != 0){
+            printf("%d\n",num_packets);
+            num_packets--;
+          }
         }
+      }
+    }else{
+      int bit = 0;
+      for(bit = 0; bit < 16; bit++){
+        if ((uint16_t)data & (1 << bit)) {
+          // Current bit is set to 1
+          payload.req_reply = REPSEQ;
+          payload.sequenceno = bit;
+          payload.totalpackets = NUMPACKETS;
+          packetbuf_copyfrom(&payload,sizeof(payload));
+          sending = 1;
+          if(broadcast_send(&uc_drone) != 0){
+            printf("Sent request packets\n");
+          }
+        }
+      }
     }
     PROCESS_END();
 }
@@ -235,12 +248,15 @@ recv_drone_uc(struct broadcast_conn *c, const linkaddr_t *from)//, uint8_t seqno
   leds_toggle(LEDS_GREEN);
   if(is_drone){// && from->u8[0]==coordinator0 && from->u8[1]==coordinator1){
     packets_received++;
-    if(received_seq == 0){
+    if(payload.req_reply == REPLY){
+      if(received_seq == 0){
         ctimer_restart(&timer);
-        ctimer_set(&timer, CLOCK_SECOND * 4, callback, NULL);
+        ctimer_set(&timer, CLOCK_SECOND * 2, callback, NULL);
+      }
+      received_seq = received_seq | (1 << payload.sequenceno);
+    }else if(payload.req_reply == REPSEQ){
+      printf("Received the dropped sequence\n");
     }
-    received_seq = received_seq | (1 << payload.sequenceno);
-    printf("sequenceno: %x\n", received_seq);
   }
 
   if(is_coordinator){// && from->u8[0]==drone0 && from->u8[1]==drone1){
@@ -253,7 +269,7 @@ recv_drone_uc(struct broadcast_conn *c, const linkaddr_t *from)//, uint8_t seqno
       }  
     }else if(payload.req_reply == REQSEQ){
       /* Sending all packets for now */
-      process_start(&send_C_D,NULL);
+      process_start(&send_C_D,(void *)payload.droppedpackets);
     }
   }
 }
@@ -318,7 +334,7 @@ PROCESS_THREAD(main_process, ev, data)
     // unicast_open(&uc_drone, 137, &drone_callbacks);
     // runicast_open(&uc_drone_1, 128, &drone_callbacks_1);
     unicast_open(&uc, 146, &sensor_callbacks);  
-  }else{
+  }else if(is_sensor){
     unicast_open(&uc, 146, &sensor_callbacks);  
   }
   
@@ -330,47 +346,39 @@ PROCESS_THREAD(main_process, ev, data)
     static struct etimer et;   
     linkaddr_t addr;
     
-    if(is_drone && !is_coordinator){
+    if(is_drone){
         etimer_set(&et, CLOCK_SECOND * 10);
     }else if(is_sensor){
         etimer_set(&et, CLOCK_SECOND * 30);
     }else {
        break; /* Coordinator*/
     }
-
     PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
 
     if(!sending){
-        if(is_drone && !is_coordinator) {
-            if(allowed_to_send){
-                printf("Sending I am Drone\n");
-                payload.req_reply = REQUEST;
-                payload.sequenceno = i;
-                payload.data3 = (uint64_t)"IAMDRONE";
-                packetbuf_copyfrom(&payload, sizeof(payload));
-                
-                addr.u8[0] = COORD0;
-                addr.u8[1] = COORD1;
-                sending = 1;
-                i = i + 1;
-                // runicast_send(&uc_drone,&addr,MAX_RETRANSMISSIONS);
-                // unicast_send(&uc_drone, &addr);                
-                broadcast_send(&uc_drone);
-            }else{
-                printf("Cannot send\n");
-            }
-        }else{
-            printf("Sending Sensor\n");
-            packetbuf_copyfrom("SENSOR", 6);
-            addr.u8[0] = COORD0;
-            addr.u8[1] = COORD1;
-            sending = 1;
-            unicast_send(&uc, &addr);
-        }
+      if(is_drone){
+        printf("Sending I am Drone\n");
+        payload.req_reply = REQUEST;
+        payload.sequenceno = i;
+        payload.data3 = (uint64_t)"IAMDRONE";
+        packetbuf_copyfrom(&payload, sizeof(payload));
+        
+        addr.u8[0] = COORD0;
+        addr.u8[1] = COORD1;
+        sending = 1;
+        i = i + 1;
+        // runicast_send(&uc_drone,&addr,MAX_RETRANSMISSIONS);
+        // unicast_send(&uc_drone, &addr);                
+        broadcast_send(&uc_drone);
+      }else if(is_sensor){
+        printf("Sending Sensor\n");
+        packetbuf_copyfrom("SENSOR", 6);
+        addr.u8[0] = COORD0;
+        addr.u8[1] = COORD1;
+        sending = 1;
+        unicast_send(&uc, &addr);
+      }
     }
-    // if(ev == sensors_event && data == &button_sensor){
-    //   printf("Received Packets: %d, Sent Packets: %d\n", packets_received,packets_sent);    
-    // }
   }
   printf("Exiting Process\n");
   PROCESS_END();
