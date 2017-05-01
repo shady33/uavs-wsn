@@ -98,8 +98,8 @@
       <breakpoints />
       <interface_config>
         org.contikios.cooja.interfaces.Position
-        <x>-64.5221088332948</x>
-        <y>167.2774126440077</y>
+        <x>95.8868801723973</x>
+        <y>79.05246869087706</y>
         <z>0.0</z>
       </interface_config>
       <interface_config>
@@ -110,7 +110,7 @@
         org.contikios.cooja.mspmote.interfaces.MspMoteID
         <id>3</id>
       </interface_config>
-      <motetype_identifier>z12</motetype_identifier>
+      <motetype_identifier>z11</motetype_identifier>
     </mote>
     <mote>
       <breakpoints />
@@ -148,13 +148,12 @@
       </interface_config>
       <motetype_identifier>z11</motetype_identifier>
     </mote>
-
     <mote>
       <breakpoints />
       <interface_config>
         org.contikios.cooja.interfaces.Position
-        <x>-53.06067679938342</x>
-        <y>167.27741264400768</y>
+        <x>-83.80573302547441</x>
+        <y>208.71640147047813</y>
         <z>0.0</z>
       </interface_config>
       <interface_config>
@@ -225,8 +224,8 @@
       <breakpoints />
       <interface_config>
         org.contikios.cooja.interfaces.Position
-        <x>-22.0</x>
-        <y>-22.0</y>
+        <x>47.0</x>
+        <y>47.0</y>
         <z>0.0</z>
       </interface_config>
       <interface_config>
@@ -260,7 +259,7 @@
       <viewport>0.7480877520881439 0.0 0.0 0.7480877520881439 169.06374159706186 152.3508200600418</viewport>
     </plugin_config>
     <width>400</width>
-    <z>3</z>
+    <z>0</z>
     <height>400</height>
     <location_x>1</location_x>
     <location_y>1</location_y>
@@ -268,13 +267,13 @@
   <plugin>
     org.contikios.cooja.plugins.LogListener
     <plugin_config>
-      <filter>ID:5</filter>
+      <filter>ID:10</filter>
       <formatted_time />
       <coloring />
     </plugin_config>
     <width>835</width>
-    <z>0</z>
-    <height>240</height>
+    <z>2</z>
+    <height>247</height>
     <location_x>401</location_x>
     <location_y>160</location_y>
   </plugin>
@@ -294,11 +293,10 @@
       <showRadioRXTX />
       <showRadioChannels />
       <showRadioHW />
-      <showLEDs />
-      <zoomfactor>20000.0</zoomfactor>
+      <zoomfactor>100000.0</zoomfactor>
     </plugin_config>
     <width>1235</width>
-    <z>2</z>
+    <z>3</z>
     <height>319</height>
     <location_x>0</location_x>
     <location_y>410</location_y>
@@ -320,7 +318,7 @@
       <hidenodests>true</hidenodests>
     </plugin_config>
     <width>500</width>
-    <z>5</z>
+    <z>4</z>
     <height>300</height>
     <location_x>682</location_x>
     <location_y>2</location_y>
@@ -331,7 +329,7 @@
       <positions EXPORT="copy">[APPS_DIR]/mobility/positions.dat</positions>
     </plugin_config>
     <width>500</width>
-    <z>4</z>
+    <z>5</z>
     <height>200</height>
     <location_x>430</location_x>
     <location_y>30</location_y>
