@@ -19,6 +19,7 @@
 *.esb
 *.avr-raven
 *.exp5438
+*.openmote-cc2538
 *.mbxxx
 *.win32
 *.apple2enh

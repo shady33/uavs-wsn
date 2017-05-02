@@ -54,26 +54,29 @@
 #define REQSEQ 3
 #define REPSEQ 4
 #define BACKOFF 5
-// #define DRONE0 0x9F
-// #define DRONE1 0x58
-// #define COORD0 0xEC
-// #define COORD1 0xB6
+#define DRONE0 0x9F
+#define DRONE1 0x58
+#define COORD00 0xEC
+#define COORD01 0xB6
+#define COORD10 0x03
+#define COORD11 0x00
 
 #if WRITE_TO_FLASH
 #define FILENAME "packets"
 #include "cfs/cfs.h"
 #include "cfs/cfs-coffee.h"
 #endif
-#define DRONE0 0x0A
-#define DRONE1 0x00
-#define COORD00 0x05
-#define COORD01 0x00
-#define COORD10 0x03
-#define COORD11 0x00
+// #define DRONE0 0x0A
+// #define DRONE1 0x00
+// #define COORD00 0x05
+// #define COORD01 0x00
+// #define COORD10 0x03
+// #define COORD11 0x00
 
 /*---------------------------------------------------------------------------*/
 PROCESS(main_process, "Main process");
 PROCESS(send_C_D, "Send Coordinator to Drone process");
+PROCESS(send_backoff, "Send Backoff from drone");
 PROCESS(button_press, "Wait for Button Press Event");
 AUTOSTART_PROCESSES(&main_process);
 /*---------------------------------------------------------------------------*/
@@ -107,6 +110,7 @@ struct packet{
 }payload;
 volatile uint16_t received_seq = 0;
 volatile int allowed_to_send = 1;
+volatile linkaddr_t current_recv;
  /*---------------------------------------------------------------------------*/
 static void callback(void *ptr)
 {
@@ -114,20 +118,15 @@ static void callback(void *ptr)
    received_seq = received_seq ^ 0xFFFE; /* FFFE */
    if(received_seq == 0){
     /* All 15 packets received send backoff to node */
-    payload.req_reply = BACKOFF;
-    payload.droppedpackets = received_seq;
-    packetbuf_copyfrom(&payload,sizeof(payload));
-    sending = 1;
-    if(broadcast_send(&uc_drone) != 0){
-      printf("Backoff\n");
-    }
+    process_start(&send_backoff,NULL);
    }else{
     /* some dropped */
     payload.req_reply = REQSEQ;
     payload.droppedpackets = received_seq;
     packetbuf_copyfrom(&payload,sizeof(payload));
     sending = 1;
-    if(broadcast_send(&uc_drone) != 0){
+    if(unicast_send(&uc_drone_1,&current_recv) != 0){
+    // if(broadcast_send(&uc_drone) != 0){
       printf("Requested new packets\n");
     }
    }
@@ -137,6 +136,7 @@ static void backoff(void *ptr)
 {
     ctimer_stop(&timer);
     allowed_to_send = 1;
+    num_packets = NUMPACKETS;
     printf("Allowed to send again\n");
 }
 /*---------------------------------------------------------------------------*/
@@ -194,14 +194,31 @@ PROCESS_THREAD(button_press,ev,data){
   PROCESS_END();
 }
 /*---------------------------------------------------------------------------*/
+PROCESS_THREAD(send_backoff, ev, data){
+    PROCESS_BEGIN();
+    static struct etimer et;   
+    
+    etimer_set(&et, CLOCK_SECOND * 1);
+    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+
+    payload.req_reply = BACKOFF;
+    packetbuf_copyfrom(&payload,sizeof(payload));
+    sending = 1;
+    if(unicast_send(&uc_drone_1,&current_recv) != 0){
+    // if(broadcast_send(&uc_drone) != 0){
+      printf("Backoff\n");
+    }
+    PROCESS_END();
+}
+/*---------------------------------------------------------------------------*/
 PROCESS_THREAD(send_C_D, ev, data){
     PROCESS_BEGIN();
     linkaddr_t addr;
     addr.u8[0] = DRONE0;
     addr.u8[1] = DRONE1;
     if(data == NULL){
-      while(num_packets > 0){
-        printf("Sending Data\n");
+      while(num_packets != 0){
+        printf("Sending Data %d\n",num_packets);
         payload.req_reply = REPLY;
         payload.sequenceno = num_packets;
         payload.totalpackets = NUMPACKETS;
@@ -209,12 +226,10 @@ PROCESS_THREAD(send_C_D, ev, data){
         packetbuf_copyfrom(&payload, sizeof(payload));
         sending = 1;
         // if(runicast_send(&uc_drone_1,&addr,MAX_RETRANSMISSIONS) != 0){
-        // if(unicast_send(&uc_drone,&addr) != 0){
+        // if(unicast_send(&uc_drone_1,&addr) != 0){
         if(broadcast_send(&uc_drone) != 0){
-          if(num_packets != 0){
-            printf("%d\n",num_packets);
-            num_packets--;
-          }
+            printf("Normal Data: %d\n",num_packets);
+            num_packets = num_packets - 1;
         }
       }
     }else{
@@ -258,23 +273,32 @@ sent_uc(struct unicast_conn *c,  int status, int num_tx)
 /*---------------------------------------------------------------------------*/
 static void
 recv_drone_uc_1(struct unicast_conn *c, const linkaddr_t *from){
-  printf("unicast received\n");
-  packetbuf_copyto(&payload);
-  received_seq = received_seq ^ (1 << payload.sequenceno); /* Account for wrong duplicates */
-  if(received_seq == 0){
-    /* Send backoff */
-    payload.req_reply = BACKOFF;
-    payload.droppedpackets = received_seq;
-    packetbuf_copyfrom(&payload,sizeof(payload));
-    sending = 1;
-    if(broadcast_send(&uc_drone) != 0){
-      printf("Backoff\n");
-    }
-  }
+    packetbuf_copyto(&payload);
+    if(is_coordinator){
+        if(payload.req_reply == REQSEQ){
+            /* Sending all dropped packets */
+            printf("Request Sequence Received\n");
+            process_start(&send_C_D,(void *)payload.droppedpackets);
+        }else if(payload.req_reply == BACKOFF){
+            printf("Backoff received\n");
+            ctimer_restart(&timer);
+            ctimer_set(&timer, CLOCK_SECOND * 15, backoff, NULL); /* 15 seconds */
+            allowed_to_send = 0;
+        }
+    }  
+    if(is_drone){
+        printf("Unicast Received Seq No: %d\n",payload.sequenceno);
+        packets_received++;
+        received_seq = received_seq ^ (1 << payload.sequenceno); /* Account for wrong duplicates */
+        if(received_seq == 0){
+            /* Send backoff */
+            process_start(&send_backoff,NULL);
+        }
+    }  
 }
 static void
 sent_drone_uc_1(struct unicast_conn *c, int status, int num_tx){
-  printf("unicast sent\n");
+  printf("Unicast sent Drone Channel\n");
   sending = 0;
 }
 /*---------------------------------------------------------------------------*/
@@ -290,33 +314,21 @@ recv_drone_uc(struct broadcast_conn *c, const linkaddr_t *from)//, uint8_t seqno
   leds_toggle(LEDS_GREEN);
   if(is_drone){// && from->u8[0]==coordinator0 && from->u8[1]==coordinator1){
     packets_received++;
+
+    current_recv.u8[0] = from->u8[0];
+    current_recv.u8[1] = from->u8[1];
     if(payload.req_reply == REPLY){
       if(received_seq == 0){
         ctimer_restart(&timer);
-        ctimer_set(&timer, CLOCK_SECOND * 2, callback, NULL);
+        ctimer_set(&timer, CLOCK_SECOND * 2, callback, NULL); /* Check with hardware */
       }
       received_seq = received_seq | (1 << payload.sequenceno);
-    }else if(payload.req_reply == REPSEQ){
-      printf("Received the dropped sequence\n");
     }
   }
 
   if(is_coordinator){// && from->u8[0]==drone0 && from->u8[1]==drone1){
     if((payload.req_reply == REQUEST) && (allowed_to_send == 1)){
-      if(num_packets > 0){
         process_start(&send_C_D,NULL);
-      }else{
-        num_packets = NUMPACKETS;
-        process_start(&send_C_D,NULL);
-      }  
-    }else if(payload.req_reply == REQSEQ){
-      /* Sending all dropped packets */
-      process_start(&send_C_D,(void *)payload.droppedpackets);
-    }else if(payload.req_reply == BACKOFF){
-        printf("Backoff received\n");
-        ctimer_restart(&timer);
-        ctimer_set(&timer, CLOCK_SECOND * 15, backoff, NULL); /* 15 seconds */
-        allowed_to_send = 0;
     }
   }
 }
@@ -326,8 +338,8 @@ sent_drone_uc(struct broadcast_conn *c,  int status, int num_tx)
 // sent_drone_uc(struct unicast_conn *c, int status, int num_tx)
 // sent_drone_uc(struct runicast_conn *c, const linkaddr_t *to, uint8_t num_tx)
 {
-  printf("Broadcast messasge sent transmission_num %d Drone\n",
-    num_tx);
+  printf("Broadcast messasge sent status:%d transmission_num %d Drone\n",
+    status,num_tx);
   leds_toggle(LEDS_YELLOW);
   packets_sent++;
   sending = 0;
@@ -407,7 +419,6 @@ PROCESS_THREAD(main_process, ev, data)
 
     if(!sending){
       if(is_drone){
-        printf("Sending I am Drone\n");
         payload.req_reply = REQUEST;
         payload.sequenceno = i;
         payload.data3 = 0x1223344556677889;
@@ -419,7 +430,9 @@ PROCESS_THREAD(main_process, ev, data)
         i = i + 1;
         // runicast_send(&uc_drone,&addr,MAX_RETRANSMISSIONS);
         // unicast_send(&uc_drone, &addr);                
-        broadcast_send(&uc_drone);
+        if(broadcast_send(&uc_drone) != 0){
+            printf("Sent I am Drone\n");
+        }
       }else if(is_sensor){
         printf("Sending Sensor\n");
         packetbuf_copyfrom("SENSOR", 6);
