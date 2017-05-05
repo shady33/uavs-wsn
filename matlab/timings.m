@@ -1,9 +1,10 @@
 % Modelling of broadcast duration, speed of drone, range of
 % communication, number of packets, time for sending stuff
+
 hit_location = 50;          %distance
 desired_speed = 10;          %m/s
 broadcast = 10;             %seconds
-range = 100;                %meters
+range = 80;                %meters
 
 disp(strcat('Possible or not with changing hit distance:',num2str(changing_distance(hit_location,desired_speed,broadcast,range))));
 disp(strcat('Possible or not with changing speed:',num2str(changing_speed(hit_location,desired_speed,broadcast,range))));
@@ -46,13 +47,19 @@ function possible = changing_distance(hit_distance,speed,broadcast,range)
         output1(j) = ((range - i)/speed) - total_time;
     end
     figure;
+    hold on;
     plot(output1);
     ax = gca;                        % gets the current axes
     ax.XAxisLocation = 'origin';     % sets them to zero
     ax.YAxisLocation = 'origin';     % sets them to zero
     xlabel('Hit distances');
     ylabel('Free time/Possible backoff times');
-    
+    title('Plot that shows the possible backoff times by varying the distance at which the packet is received');
+    plot(hit_distance,output1(hit_distance),'r*');
+    dim = [0.2 0.5 0.3 0.3];
+    str = {'Fixed Parameters',strcat('Speed: ',num2str(speed)),strcat('Range: ',num2str(range))};
+    annotation('textbox',dim,'String',str,'FitBoxToText','on');
+
     if output1(hit_distance) > 0
         possible = true;
     else
@@ -102,12 +109,19 @@ function possible = changing_range(hit_distance,speed,broadcast,range)
     end
     
     figure;
+    hold on;
     plot(linspace(1,max_range,100),output1);
     ax = gca;                        % gets the current axes
     ax.XAxisLocation = 'origin';     % sets them to zero
     ax.YAxisLocation = 'origin';     % sets them to zero
     xlabel('Range(TX)');
     ylabel('Free time/Possible backoff times');
+    title('Plot that shows the possible backoff times by varying the tx range of the nodes');
+    plot(range,output1(range),'r*');
+    
+    dim = [0.2 0.5 0.3 0.3];
+    str = {'Fixed Parameters',strcat('Speed: ',num2str(speed)),strcat('Hit distance: ',num2str(hit_distance))};
+    annotation('textbox',dim,'String',str,'FitBoxToText','on');
     
 %     disp(no_of_broadcasts);
     if output1(range) > 0
@@ -154,12 +168,18 @@ function possible = changing_speed(hit_distance,desired_speed,broadcast,range)
     end
     
     figure;
+    hold on;
     plot(linspace(1,max_speed,100),output1);
     ax = gca;                        % gets the current axes
     ax.XAxisLocation = 'origin';     % sets them to zero
     ax.YAxisLocation = 'origin';     % sets them to zero
     xlabel('Speed');
     ylabel('Free time/Possible backoff times');
+    title('Plot that shows the possible backoff times by varying the speed of the drone');
+    plot(desired_speed,output1(desired_speed*10),'r*');
+    dim = [0.2 0.5 0.3 0.3];
+    str = {'Fixed Parameters',strcat('Hit Distance: ',num2str(hit_distance)),strcat('Range: ',num2str(range))};
+    annotation('textbox',dim,'String',str,'FitBoxToText','on');
     
 %     disp(no_of_broadcasts);
     if output1(desired_speed * 10) > 0
