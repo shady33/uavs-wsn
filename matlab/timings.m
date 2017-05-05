@@ -2,9 +2,9 @@
 % communication, number of packets, time for sending stuff
 
 hit_location = 50;          %distance
-desired_speed = 10;          %m/s
+desired_speed = 5;          %m/s
 broadcast = 10;             %seconds
-range = 80;                %meters
+range = 100;                %meters
 
 disp(strcat('Possible or not with changing hit distance:',num2str(changing_distance(hit_location,desired_speed,broadcast,range))));
 disp(strcat('Possible or not with changing speed:',num2str(changing_speed(hit_location,desired_speed,broadcast,range))));
@@ -48,14 +48,15 @@ function possible = changing_distance(hit_distance,speed,broadcast,range)
     end
     figure;
     hold on;
-    plot(output1);
+    plot(linspace(1,range,100),output1);
     ax = gca;                        % gets the current axes
     ax.XAxisLocation = 'origin';     % sets them to zero
     ax.YAxisLocation = 'origin';     % sets them to zero
-    xlabel('Hit distances');
+    xlabel('Hit distance');
     ylabel('Free time/Possible backoff times');
     title('Plot that shows the possible backoff times by varying the distance at which the packet is received');
-    plot(hit_distance,output1(hit_distance),'r*');
+    [a index] = min(abs(linspace(1,range,100) - hit_distance));
+    plot(hit_distance,output1(index),'r*');
     dim = [0.2 0.5 0.3 0.3];
     str = {'Fixed Parameters',strcat('Speed: ',num2str(speed)),strcat('Range: ',num2str(range))};
     annotation('textbox',dim,'String',str,'FitBoxToText','on');
