@@ -11,7 +11,7 @@ disp(strcat('Possible or not with changing speed:',num2str(changing_speed(hit_lo
 disp(strcat('Possible or not with changing range:',num2str(changing_range(hit_location,desired_speed,broadcast,range))));
 
 %changes hit location i.e when the packet is received
-function possible = changing_distance(hit_distance,speed,broadcast,range)
+function possible = changing_distance(hit_location,speed,broadcast,range)
     num_packets = 15;   
     time_per_packet = 0.06;    %seconds 
     %3.47s for 10seconds timer,2s backoff
@@ -55,13 +55,13 @@ function possible = changing_distance(hit_distance,speed,broadcast,range)
     xlabel('Hit distance');
     ylabel('Free time/Possible backoff times');
     title('Plot that shows the possible backoff times by varying the distance at which the packet is received');
-    [a index] = min(abs(linspace(1,range,100) - hit_distance));
-    plot(hit_distance,output1(index),'r*');
+    [a index] = min(abs(linspace(1,range,100) - hit_location));
+    plot(hit_location,output1(index),'r*');
     dim = [0.2 0.5 0.3 0.3];
     str = {'Fixed Parameters',strcat('Speed: ',num2str(speed)),strcat('Range: ',num2str(range))};
     annotation('textbox',dim,'String',str,'FitBoxToText','on');
 
-    if output1(hit_distance) > 0
+    if output1(hit_location) > 0
         possible = true;
     else
         possible = false;
@@ -70,8 +70,8 @@ function possible = changing_distance(hit_distance,speed,broadcast,range)
 end
 
 % changes range of communication
-function possible = changing_range(hit_distance,speed,broadcast,range)
-    if hit_distance > range
+function possible = changing_range(hit_location,speed,broadcast,range)
+    if hit_location > range
         disp('Hit distance cannot be further from range');
         possible = false;
         return;
@@ -105,7 +105,7 @@ function possible = changing_range(hit_distance,speed,broadcast,range)
     j = 0;
     for i = linspace(1,max_range,100)
         j = j + 1;
-        output1(j) = ((i - hit_distance)/speed) - total_time;
+        output1(j) = ((i - hit_location)/speed) - total_time;
         no_of_broadcasts(j) = i / (broadcast * speed);
     end
     
@@ -121,7 +121,7 @@ function possible = changing_range(hit_distance,speed,broadcast,range)
     plot(range,output1(range),'r*');
     
     dim = [0.2 0.5 0.3 0.3];
-    str = {'Fixed Parameters',strcat('Speed: ',num2str(speed)),strcat('Hit distance: ',num2str(hit_distance))};
+    str = {'Fixed Parameters',strcat('Speed: ',num2str(speed)),strcat('Hit distance: ',num2str(hit_location))};
     annotation('textbox',dim,'String',str,'FitBoxToText','on');
     
 %     disp(no_of_broadcasts);
@@ -134,7 +134,7 @@ function possible = changing_range(hit_distance,speed,broadcast,range)
 end
 
 % changes speed of drone
-function possible = changing_speed(hit_distance,desired_speed,broadcast,range)
+function possible = changing_speed(hit_location,desired_speed,broadcast,range)
     max_speed = 10;                 %m/s
     num_packets = 15;   
     time_per_packet = 0.06;    %seconds 
@@ -164,7 +164,7 @@ function possible = changing_speed(hit_distance,desired_speed,broadcast,range)
     j = 0;
     for i = linspace(1,max_speed,100)
         j = j + 1;
-        output1(j) = ((range - hit_distance)/i) - total_time;
+        output1(j) = ((range - hit_location)/i) - total_time;
         no_of_broadcasts(j) = range / (broadcast * i);
     end
     
@@ -179,7 +179,7 @@ function possible = changing_speed(hit_distance,desired_speed,broadcast,range)
     title('Plot that shows the possible backoff times by varying the speed of the drone');
     plot(desired_speed,output1(desired_speed*10),'r*');
     dim = [0.2 0.5 0.3 0.3];
-    str = {'Fixed Parameters',strcat('Hit Distance: ',num2str(hit_distance)),strcat('Range: ',num2str(range))};
+    str = {'Fixed Parameters',strcat('Hit Distance: ',num2str(hit_location)),strcat('Range: ',num2str(range))};
     annotation('textbox',dim,'String',str,'FitBoxToText','on');
     
 %     disp(no_of_broadcasts);
