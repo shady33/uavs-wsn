@@ -5,7 +5,7 @@ REQSEQ  = 0x03
 REPSEQ  = 0x04
 BACKOFF = 0x05
 
-with open('/Users/lakshbhatia/Downloads/Power0.json') as file:
+with open('Power0.json') as file:
     data = json.load(file)
 request = 0
 reply = 0
