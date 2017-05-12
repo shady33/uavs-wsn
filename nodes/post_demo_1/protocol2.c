@@ -55,10 +55,13 @@
 #define DRONE_STUBBORN_TIME CLOCK_SECOND
 #define POWER_NODES 7
 #define NUM_PACKETS 1
+#define PACKET_CHECKER 0x0001
 #define REQUEST 1
 #define REPLY   2
 #define ACCEPT  3
 #define DATA    4
+#define BACKOFF 5
+#define BACKOFF_TIME 10
 
 struct coord{
     uint8_t first;
@@ -84,11 +87,40 @@ static struct stbroadcast_conn stbroadcast_drone;
 static struct runicast_conn runicast_drone;
 static struct unicast_conn unicast_drone;
 volatile int num_packets = NUM_PACKETS;
-
+volatile uint16_t received_seq = 0;
+static struct ctimer timer;
+volatile linkaddr_t current_recv;
+volatile int allowed_to_send = 1;
 /*---------------------------------------------------------------------------*/
 PROCESS(send_C_D, "Send Coordinator to Drone process");
+PROCESS(send_backoff, "Send Backoff");
 PROCESS(main_process, "main process");
 AUTOSTART_PROCESSES(&main_process);
+/*---------------------------------------------------------------------------*/
+static void backoff(void *ptr)
+{
+    allowed_to_send = 1;
+}
+/*---------------------------------------------------------------------------*/
+static void callback(void *ptr)
+{
+   ctimer_stop(&timer);
+   received_seq = received_seq ^ PACKET_CHECKER; 
+   if(received_seq == 0){
+    process_start(&send_backoff,NULL);
+   }else{
+    /* some dropped */
+   }
+}
+/*---------------------------------------------------------------------------*/
+PROCESS_THREAD(send_backoff,ev,data){
+    PROCESS_BEGIN();
+
+    payload.req_reply = BACKOFF;
+    packetbuf_copyfrom(&payload,sizeof(payload));
+    runicast_send(&runicast_drone,&current_recv,MAX_RETRANSMISSIONS);
+    PROCESS_END();
+}
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(send_C_D,ev,data){
   PROCESS_BEGIN();
@@ -118,6 +150,18 @@ recv_unicast_drone(struct unicast_conn *c, const linkaddr_t *from)
   packetbuf_copyto(&payload);
   printf("%lu:unicast message received from %d.%d, RSSI:%d Packetno:%d\n",
    clock_time(),from->u8[0], from->u8[1],(signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI),payload.sequenceno);
+  linkaddr_copy(&current_recv,from);
+  if(received_seq == 0){
+    /* Start timer */
+    ctimer_restart(&timer);
+    ctimer_set(&timer, CLOCK_SECOND * 5, callback, NULL);
+  }
+
+  received_seq = received_seq | (1 << payload.sequenceno);
+  if(received_seq ^ PACKET_CHECKER){
+    ctimer_stop(&timer);
+    process_start(&send_backoff,NULL);
+  }
 }
 static void
 sent_unicast_drone(struct unicast_conn *c, int status, int num_tx)
@@ -144,6 +188,11 @@ recv_runicast_drone(struct runicast_conn *c, const linkaddr_t *from, uint8_t seq
   }else if(is_coordinator && payload.req_reply == ACCEPT){
     /* Switch channels */
     process_start(&send_C_D,NULL);
+  }else if(is_coordinator && payload.req_reply == BACKOFF){
+    /* Start backoff timer */
+    allowed_to_send = 0;
+    ctimer_restart(&timer);
+    ctimer_set(&timer, CLOCK_SECOND * BACKOFF_TIME, backoff, NULL);
   }
 }
 static void
@@ -154,7 +203,7 @@ sent_runicast_drone(struct runicast_conn *c, const linkaddr_t *to, uint8_t retra
    to->u8[0], to->u8[1], retransmissions);
 
   if(is_drone){
-    /* Sent ACCEPT packet */
+    /* Sent ACCEPT and BACKOFF packet */
     /* Switch channels? */
   }else if(is_coordinator){
     /* Sent REPLY packet */
@@ -176,12 +225,14 @@ recv_stbroadcast_drone(struct stbroadcast_conn *c)
   printf("%lu:stbroadcast message received RSSI:%d\n",
      clock_time(),(signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI));
 
-  linkaddr_t addr;
-  addr.u8[0] = DRONE0;
-  addr.u8[1] = DRONE1;
-  payload.req_reply = REPLY;
-  packetbuf_copyfrom(&payload,sizeof(payload));
-  runicast_send(&runicast_drone,&addr,MAX_RETRANSMISSIONS);
+  if(allowed_to_send){
+    linkaddr_t addr;
+    addr.u8[0] = DRONE0;
+    addr.u8[1] = DRONE1;
+    payload.req_reply = REPLY;
+    packetbuf_copyfrom(&payload,sizeof(payload));
+    runicast_send(&runicast_drone,&addr,MAX_RETRANSMISSIONS);  
+  }
 }
 static void
 sent_stbroadcast_drone(struct stbroadcast_conn *c)
