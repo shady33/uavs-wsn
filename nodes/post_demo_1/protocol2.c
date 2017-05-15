@@ -51,11 +51,10 @@
 #define DRONE1 0xC8
 #define NUMRECORDS sizeof(coords) / sizeof(struct coord)
 #define MAX_RETRANSMISSIONS 31
-#define DRONE_PRIMARY_CHANNEL 26
 #define DRONE_STUBBORN_TIME CLOCK_SECOND
 #define POWER_NODES 7
 #define NUM_PACKETS 2
-#define PACKET_CHECKER 0x0002
+#define PACKET_CHECKER 0x0006
 #define REQUEST 1
 #define REPLY   2
 #define ACCEPT  3
@@ -97,16 +96,26 @@ PROCESS(send_backoff, "Send Backoff");
 PROCESS(main_process, "main process");
 AUTOSTART_PROCESSES(&main_process);
 /*---------------------------------------------------------------------------*/
+static void change_send(void *ptr){
+    printf("Change Channel to %d\n",FFD_CHANNEL_2);
+    NETSTACK_RADIO.set_value(RADIO_PARAM_CHANNEL,FFD_CHANNEL_2);
+    process_start(&send_C_D,NULL);
+}
+/*---------------------------------------------------------------------------*/
 static void backoff(void *ptr)
 {
+    printf("Backoff Timer\n");
     allowed_to_send = 1;
     num_packets = NUM_PACKETS;
+    printf("Change Channel to %d\n",FFD_CHANNEL_1);
+    NETSTACK_RADIO.set_value(RADIO_PARAM_CHANNEL,FFD_CHANNEL_1);
 }
 /*---------------------------------------------------------------------------*/
 static void callback(void *ptr)
 {
+    printf("Callback timer\n");
    ctimer_stop(&timer);
-   received_seq = received_seq ^ PACKET_CHECKER; 
+   received_seq = received_seq ^ PACKET_CHECKER;
    if(received_seq == 0){
     process_start(&send_backoff,NULL);
    }else{
@@ -116,7 +125,7 @@ static void callback(void *ptr)
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(send_backoff,ev,data){
     PROCESS_BEGIN();
-
+    printf("Send Backoff\n");
     payload.req_reply = BACKOFF;
     packetbuf_copyfrom(&payload,sizeof(payload));
     runicast_send(&runicast_drone,&current_recv,MAX_RETRANSMISSIONS);
@@ -126,6 +135,7 @@ PROCESS_THREAD(send_backoff,ev,data){
 PROCESS_THREAD(send_C_D,ev,data){
   PROCESS_BEGIN();
 
+  printf("Num Packets to send:%d\n", num_packets);
   linkaddr_t addr;
   addr.u8[0] = DRONE0;
   addr.u8[1] = DRONE1;
@@ -152,14 +162,16 @@ recv_unicast_drone(struct unicast_conn *c, const linkaddr_t *from)
   printf("%lu:unicast message received from %d.%d, RSSI:%d Packetno:%d\n",
    clock_time(),from->u8[0], from->u8[1],(signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI),payload.sequenceno);
   linkaddr_copy(&current_recv,from);
-  if(received_seq == 0){
+  received_seq = received_seq | (1 << payload.sequenceno);
+
+  if(received_seq == (1 << payload.sequenceno)){
     /* Start timer */
     ctimer_restart(&timer);
     ctimer_set(&timer, CLOCK_SECOND * 5, callback, NULL);
   }
 
-  received_seq = received_seq | (1 << payload.sequenceno);
-  if(received_seq ^ PACKET_CHECKER){
+  if(!(received_seq ^ PACKET_CHECKER)){
+    received_seq = 0;
     ctimer_stop(&timer);
     process_start(&send_backoff,NULL);
   }
@@ -187,8 +199,12 @@ recv_runicast_drone(struct runicast_conn *c, const linkaddr_t *from, uint8_t seq
     packetbuf_copyfrom(&payload,sizeof(payload));
     runicast_send(&runicast_drone,from,MAX_RETRANSMISSIONS);
   }else if(is_coordinator && payload.req_reply == ACCEPT){
+    if(runicast_is_transmitting(c)){
+        runicast_cancel(c);
+    }
     /* Switch channels */
-    process_start(&send_C_D,NULL);
+    ctimer_restart(&timer);
+    ctimer_set(&timer, CLOCK_SECOND * 2, change_send, NULL);
   }else if(is_coordinator && payload.req_reply == BACKOFF){
     /* Start backoff timer */
     allowed_to_send = 0;
@@ -206,7 +222,12 @@ sent_runicast_drone(struct runicast_conn *c, const linkaddr_t *to, uint8_t retra
   if(is_drone){
     /* Sent ACCEPT and BACKOFF packet */
     /* Switch channels? */
-    if(payload.req_reply == BACKOFF){
+    if(payload.req_reply == ACCEPT){
+        printf("Change Channel to %d\n",FFD_CHANNEL_2);
+        NETSTACK_RADIO.set_value(RADIO_PARAM_CHANNEL,FFD_CHANNEL_2);
+    }else if(payload.req_reply == BACKOFF){
+        printf("Change Channel to %d\n",FFD_CHANNEL_1);
+        NETSTACK_RADIO.set_value(RADIO_PARAM_CHANNEL,FFD_CHANNEL_1);
         payload.req_reply = REQUEST;
         packetbuf_copyfrom(&payload,sizeof(payload));
         stbroadcast_send_stubborn(&stbroadcast_drone, DRONE_STUBBORN_TIME);
@@ -281,7 +302,8 @@ PROCESS_THREAD(main_process, ev, data)
   }
 
   if(is_drone){
-    NETSTACK_RADIO.set_value(RADIO_PARAM_CHANNEL,DRONE_PRIMARY_CHANNEL);
+    printf("Change Channel to %d\n",FFD_CHANNEL_1);
+    NETSTACK_RADIO.set_value(RADIO_PARAM_CHANNEL,FFD_CHANNEL_1);
     stbroadcast_open(&stbroadcast_drone, 137, &stbroadcast_drone_callbacks);
     runicast_open(&runicast_drone, 144, &runicast_drone_callbacks);
     unicast_open(&unicast_drone, 140, &unicast_drone_callbacks);
@@ -289,6 +311,8 @@ PROCESS_THREAD(main_process, ev, data)
     packetbuf_copyfrom(&payload,sizeof(payload));
     stbroadcast_send_stubborn(&stbroadcast_drone, DRONE_STUBBORN_TIME);
   }else if(is_coordinator){
+    printf("Change Channel to %d\n",FFD_CHANNEL_1);
+    NETSTACK_RADIO.set_value(RADIO_PARAM_CHANNEL,FFD_CHANNEL_1);
     stbroadcast_open(&stbroadcast_drone, 137, &stbroadcast_drone_callbacks);
     runicast_open(&runicast_drone, 144, &runicast_drone_callbacks);
     unicast_open(&unicast_drone, 140, &unicast_drone_callbacks);
