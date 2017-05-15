@@ -109,6 +109,7 @@ static void backoff(void *ptr)
     num_packets = NUM_PACKETS;
     printf("Change Channel to %d\n",FFD_CHANNEL_1);
     NETSTACK_RADIO.set_value(RADIO_PARAM_CHANNEL,FFD_CHANNEL_1);
+    leds_off(LEDS_YELLOW);
 }
 /*---------------------------------------------------------------------------*/
 static void callback(void *ptr)
@@ -151,6 +152,7 @@ PROCESS_THREAD(send_C_D,ev,data){
         printf("Normal Data: %d\n",num_packets);
         num_packets = num_packets - 1;
     }
+    leds_toggle(LEDS_GREEN);
   }
   PROCESS_END();
 }
@@ -158,6 +160,10 @@ PROCESS_THREAD(send_C_D,ev,data){
 static void
 recv_unicast_drone(struct unicast_conn *c, const linkaddr_t *from)
 {
+    if(runicast_is_transmitting(&runicast_drone)){
+        runicast_cancel(&runicast_drone);
+    }
+
   packetbuf_copyto(&payload);
   printf("%lu:unicast message received from %d.%d, RSSI:%d Packetno:%d\n",
    clock_time(),from->u8[0], from->u8[1],(signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI),payload.sequenceno);
@@ -194,19 +200,23 @@ recv_runicast_drone(struct runicast_conn *c, const linkaddr_t *from, uint8_t seq
 
   if(is_drone && payload.req_reply == REPLY){
     stbroadcast_cancel(&stbroadcast_drone);
+    leds_off(LEDS_GREEN);
     printf("Sending Runicast message to %d.%d\n", from->u8[0],from->u8[1]);
     payload.req_reply = ACCEPT;
     packetbuf_copyfrom(&payload,sizeof(payload));
     runicast_send(&runicast_drone,from,MAX_RETRANSMISSIONS);
+    leds_on(LEDS_YELLOW);
   }else if(is_coordinator && payload.req_reply == ACCEPT){
     if(runicast_is_transmitting(c)){
         runicast_cancel(c);
     }
+    leds_on(LEDS_GREEN);
     /* Switch channels */
     ctimer_restart(&timer);
     ctimer_set(&timer, CLOCK_SECOND * 2, change_send, NULL);
   }else if(is_coordinator && payload.req_reply == BACKOFF){
     /* Start backoff timer */
+    leds_on(LEDS_YELLOW);
     allowed_to_send = 0;
     ctimer_restart(&timer);
     ctimer_set(&timer, CLOCK_SECOND * BACKOFF_TIME, backoff, NULL);
@@ -225,12 +235,14 @@ sent_runicast_drone(struct runicast_conn *c, const linkaddr_t *to, uint8_t retra
     if(payload.req_reply == ACCEPT){
         printf("Change Channel to %d\n",FFD_CHANNEL_2);
         NETSTACK_RADIO.set_value(RADIO_PARAM_CHANNEL,FFD_CHANNEL_2);
+        leds_off(LEDS_YELLOW);
     }else if(payload.req_reply == BACKOFF){
         printf("Change Channel to %d\n",FFD_CHANNEL_1);
         NETSTACK_RADIO.set_value(RADIO_PARAM_CHANNEL,FFD_CHANNEL_1);
         payload.req_reply = REQUEST;
         packetbuf_copyfrom(&payload,sizeof(payload));
         stbroadcast_send_stubborn(&stbroadcast_drone, DRONE_STUBBORN_TIME);
+        leds_on(LEDS_GREEN);
     }
   }else if(is_coordinator){
     /* Sent REPLY packet */
@@ -241,6 +253,14 @@ timedout_runicast_drone(struct runicast_conn *c, const linkaddr_t *to, uint8_t r
 {
   printf("runicast message timed out when sending to %d.%d, retransmissions %d\n",
    to->u8[0], to->u8[1], retransmissions);
+  if(is_drone){
+    printf("Change Channel to %d\n",FFD_CHANNEL_1);
+    NETSTACK_RADIO.set_value(RADIO_PARAM_CHANNEL,FFD_CHANNEL_1);
+    payload.req_reply = REQUEST;
+    packetbuf_copyfrom(&payload,sizeof(payload));
+    stbroadcast_send_stubborn(&stbroadcast_drone, DRONE_STUBBORN_TIME);
+    leds_on(LEDS_GREEN);
+  }
 }
 static const struct runicast_callbacks runicast_drone_callbacks = {recv_runicast_drone,
                    sent_runicast_drone,
@@ -310,6 +330,7 @@ PROCESS_THREAD(main_process, ev, data)
     payload.req_reply = REQUEST;
     packetbuf_copyfrom(&payload,sizeof(payload));
     stbroadcast_send_stubborn(&stbroadcast_drone, DRONE_STUBBORN_TIME);
+    leds_on(LEDS_GREEN);
   }else if(is_coordinator){
     printf("Change Channel to %d\n",FFD_CHANNEL_1);
     NETSTACK_RADIO.set_value(RADIO_PARAM_CHANNEL,FFD_CHANNEL_1);
