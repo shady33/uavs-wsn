@@ -213,7 +213,9 @@ recv_unicast_drone(struct unicast_conn *c, const linkaddr_t *from)
   PRINTF("%lu:unicast message received from %d.%d, RSSI:%d Packetno:%d\n",
    clock_time(),from->u8[0], from->u8[1],(signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI),payload.sequenceno);
   linkaddr_copy(&current_recv,from);
-  received_seq = received_seq | (1 << payload.sequenceno);
+  if(!(received_seq & (1 << payload.sequenceno))){
+    received_seq = received_seq | (1 << payload.sequenceno);
+  }
 
   if(received_seq == (1 << payload.sequenceno)){
     /* Start timer */
@@ -221,7 +223,7 @@ recv_unicast_drone(struct unicast_conn *c, const linkaddr_t *from)
     ctimer_set(&timer, CLOCK_SECOND * WAITFORALLPACKETS, callback, NULL);
   }
 
-  PRINTF("%x,%x\n",received_seq,(1 << payload.sequenceno));
+  // PRINTF("%x,%x\n",received_seq,(1 << payload.sequenceno));
 
   if(!(received_seq ^ PACKET_CHECKER)){
     received_seq = 0;
