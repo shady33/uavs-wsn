@@ -250,11 +250,13 @@ recv_runicast_drone(struct runicast_conn *c, const linkaddr_t *from, uint8_t seq
   if(is_drone && payload.req_reply == REPLY){
     stbroadcast_cancel(&stbroadcast_drone);
     leds_off(LEDS_GREEN);
-    PRINTF("%lu:Sending Runicast message to %d.%d\n",clock_time(), from->u8[0],from->u8[1]);
-    payload.req_reply = ACCEPT;
-    packetbuf_copyfrom(&payload,sizeof(payload));
-    runicast_send(&runicast_drone,from,MAX_RETRANSMISSIONS);
-    leds_on(LEDS_YELLOW);
+    if(!runicast_is_transmitting(&runicast_drone)){
+        PRINTF("%lu:Sending Runicast message to %d.%d\n",clock_time(), from->u8[0],from->u8[1]);
+        payload.req_reply = ACCEPT;
+        packetbuf_copyfrom(&payload,sizeof(payload));
+        runicast_send(&runicast_drone,from,MAX_RETRANSMISSIONS);
+        leds_on(LEDS_YELLOW);
+    }
   }else if(is_coordinator && payload.req_reply == ACCEPT){
     if(runicast_is_transmitting(c)){
         runicast_cancel(c);
