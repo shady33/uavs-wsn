@@ -63,8 +63,8 @@
 #define POWER_NODES -7
 
 /* Number of packets to send */
-#define NUM_PACKETS 20
-#define PACKET_CHECKER 0x1FFFFE
+#define NUM_PACKETS 1
+#define PACKET_CHECKER 0x2
 
 /* Packet Types */
 #define REQUEST 1
@@ -82,7 +82,7 @@ struct coord{
     uint8_t first;
     uint8_t second;
 };
-struct coord coords[] = {{0xEC,0xB6}};
+struct coord coords[] = {{0xEC,0xB6},{0x9F,0x7F},{0xE9,0x94}};
 // struct coord coords[] = {{0x2,0x0},{0x3,0x0}};
 
 struct packet{
@@ -121,6 +121,7 @@ static void change_send(void *ptr){
 static void backoff(void *ptr)
 {
     PRINTF("Backoff Timer\n");
+    ctimer_stop(&timer);
     allowed_to_send = 1;
     num_packets = NUM_PACKETS;
     PRINTF("%lu:Change Channel to %d\n",clock_time(),FFD_CHANNEL_1);
@@ -299,8 +300,8 @@ sent_runicast_drone(struct runicast_conn *c, const linkaddr_t *to, uint8_t retra
 static void
 timedout_runicast_drone(struct runicast_conn *c, const linkaddr_t *to, uint8_t retransmissions)
 {
-  PRINTF("runicast message timed out when sending to %d.%d, retransmissions %d\n",
-   to->u8[0], to->u8[1], retransmissions);
+  PRINTF("%lu:runicast message timed out when sending to %d.%d, retransmissions %d\n",
+   clock_time(),to->u8[0], to->u8[1], retransmissions);
   if(is_drone){
     PRINTF("%lu:Change Channel to %d\n",clock_time(),FFD_CHANNEL_1);
     NETSTACK_RADIO.set_value(RADIO_PARAM_CHANNEL,FFD_CHANNEL_1);
@@ -362,7 +363,7 @@ PROCESS_THREAD(main_process, ev, data)
   if(linkaddr_node_addr.u8[0] == DRONE0 &&
      linkaddr_node_addr.u8[1] == DRONE1) {
     is_drone = 1;
-    leds_on(LEDS_ORANGE);
+    // leds_on(LEDS_ORANGE);
   }
 
   if(!is_drone && !is_coordinator){
