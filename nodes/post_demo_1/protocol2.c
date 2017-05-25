@@ -53,6 +53,12 @@
 #include "dev/leds.h"
 #include "net/netstack.h"
 
+#if WRITE_TO_FLASH
+#define FILENAME "logdata"
+#include "cfs/cfs.h"
+#include "cfs/cfs-coffee.h"
+#endif
+
 #define NUMRECORDS sizeof(coords) / sizeof(struct coord)
 
 /* Timings */
@@ -94,6 +100,16 @@ struct packet{
     uint64_t data3;
     uint64_t data4;
 }payload;
+
+volatile int no_records = 0;
+volatile struct record {
+    linkaddr_t from_to;
+    clock_time_t time;
+    signed short RSSI;
+    uint16_t packet_type;
+    uint16_t packet_no_retrans;
+}records[10];
+
 volatile int sending = 0;
 int is_drone = 0;
 int is_coordinator = 0;
@@ -107,6 +123,8 @@ static struct ctimer timer;
 volatile linkaddr_t current_recv;
 volatile int allowed_to_send = 1;
 /*---------------------------------------------------------------------------*/
+PROCESS(write_flash, "Write To flash");
+PROCESS(read_flash, "Read flash");
 PROCESS(send_C_D, "Send Coordinator to Drone process");
 PROCESS(send_backoff, "Send Backoff");
 PROCESS(main_process, "main process");
@@ -147,6 +165,81 @@ static void callback(void *ptr)
     }
    }
 }
+/*---------------------------------------------------------------------------*/
+#if WRITE_TO_FLASH
+PROCESS_THREAD(read_flash,ev,data){
+  PROCESS_BEGIN();
+
+    while(1){
+        PROCESS_WAIT_EVENT_UNTIL(ev == sensors_event && data == &button_sensor);
+
+        int fd;
+        int r;
+        fd = cfs_open(FILENAME, CFS_READ);
+        if(fd < 0) {
+            printf("failed to open %s\n", FILENAME);
+        }else{
+            printf("Reading first time %d\n",fd);
+            while(1){
+                r = cfs_read(fd, &records, sizeof(records));
+                if(r == 0) {
+                    PRINTF("No records found\n");
+                    break;
+                }else if(r < sizeof(records)) { /* 0x00 Error */ 
+                    PRINTF("failed to read %d bytes from %s\n",
+                        (int)sizeof(records), FILENAME);
+                }else{
+                    PRINTF("Read Properly\n");
+                }
+                for(int i = 0; i < (r/sizeof(struct record)) + 1 ; i++){
+                    PRINTF("%lu: %d.%d Packet_Type:%d PacketNo_Noretrans:%d RSSI:%d\n",records[i].time,records[i].from_to.u8[0],records[i].from_to.u8[1],
+                            records[i].packet_type,records[i].packet_no_retrans,records[i].RSSI);
+                }
+
+            }
+        PRINTF("Closing the file\n");
+        cfs_close(fd);
+        }
+    }
+  PROCESS_END();
+}
+#endif
+/*---------------------------------------------------------------------------*/
+#if WRITE_TO_FLASH
+PROCESS_THREAD(write_flash,ev,data){
+    PROCESS_BEGIN();
+
+    PRINTF("Going to Write to File\n");
+    int fd;
+    int r;
+    fd = cfs_open(FILENAME, CFS_WRITE | CFS_APPEND);
+    if(fd < 0) {
+        PRINTF("failed to open %s\n", FILENAME);
+        fd = cfs_open(FILENAME, CFS_READ | CFS_WRITE);
+        if(fd < 0){
+            PRINTF("Still Did not open\n");
+        }
+    }
+
+    for(int i = 0; i < no_records ; i++){
+        PRINTF("%lu: %d.%d Packet_Type:%d PacketNo_Noretrans:%d RSSI:%d\n",records[i].time,records[i].from_to.u8[0],records[i].from_to.u8[1],
+                records[i].packet_type,records[i].packet_no_retrans,records[i].RSSI);
+    }
+    
+    r = cfs_write(fd, &records, sizeof(struct record)*no_records);
+    if(r != sizeof(struct record)*no_records) {
+        PRINTF("failed to write %d bytes to %s,written %d\n",
+        (int)sizeof(records), FILENAME,r);
+    }else{
+        PRINTF("Written Data\n");
+        no_records = 0;
+    }
+    cfs_close(fd);
+    PRINTF("File Write Complete\n");
+
+    PROCESS_END();
+}
+#endif
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(send_backoff,ev,data){
     PROCESS_BEGIN();
@@ -217,6 +310,16 @@ recv_unicast_drone(struct unicast_conn *c, const linkaddr_t *from)
     received_seq = received_seq | (1 << payload.sequenceno);
   }
 
+    #if WRITE_TO_FLASH
+        records[no_records].time = clock_time();
+        linkaddr_copy(&records[no_records].from_to,from);
+        records[no_records].packet_type = payload.req_reply;
+        records[no_records].RSSI = packetbuf_attr(PACKETBUF_ATTR_RSSI);
+        records[no_records].packet_no_retrans = payload.sequenceno;
+        no_records = no_records + 1;
+    #endif
+
+
   if(received_seq == (1 << payload.sequenceno)){
     /* Start timer */
     ctimer_restart(&timer);
@@ -246,6 +349,15 @@ recv_runicast_drone(struct runicast_conn *c, const linkaddr_t *from, uint8_t seq
   packetbuf_copyto(&payload);
   PRINTF("%lu:runicast message received from %d.%d, seqno %d RSSI:%d Packet type:%d\n",
    clock_time(),from->u8[0], from->u8[1], seqno,(signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI),payload.req_reply);
+
+    #if WRITE_TO_FLASH
+        records[no_records].time = clock_time();
+        linkaddr_copy(&records[no_records].from_to,from);
+        records[no_records].packet_type = payload.req_reply;
+        records[no_records].RSSI = packetbuf_attr(PACKETBUF_ATTR_RSSI);
+        records[no_records].packet_no_retrans = 0;
+        no_records = no_records + 1;
+    #endif
 
   if(is_drone && payload.req_reply == REPLY){
     stbroadcast_cancel(&stbroadcast_drone);
@@ -282,6 +394,15 @@ sent_runicast_drone(struct runicast_conn *c, const linkaddr_t *to, uint8_t retra
   PRINTF("%lu:runicast message sent to %d.%d, retransmissions %d\n",
    clock_time(),to->u8[0], to->u8[1], retransmissions);
 
+    #if WRITE_TO_FLASH
+        records[no_records].time = clock_time();
+        linkaddr_copy(&records[no_records].from_to,to);
+        records[no_records].packet_no_retrans = retransmissions;
+        records[no_records].packet_type = payload.req_reply;
+        records[no_records].RSSI = 0;
+        no_records = no_records + 1;
+    #endif
+
   if(is_drone){
     /* Sent ACCEPT and BACKOFF packet */
     /* Switch channels? */
@@ -296,6 +417,9 @@ sent_runicast_drone(struct runicast_conn *c, const linkaddr_t *to, uint8_t retra
         packetbuf_copyfrom(&payload,sizeof(payload));
         stbroadcast_send_stubborn(&stbroadcast_drone, DRONE_STUBBORN_TIME);
         leds_on(LEDS_GREEN);
+    #if WRITE_TO_FLASH
+        process_start(&write_flash,NULL);
+    #endif
     }
   }else if(is_coordinator){
     /* Sent REPLY packet */
@@ -306,6 +430,14 @@ timedout_runicast_drone(struct runicast_conn *c, const linkaddr_t *to, uint8_t r
 {
   PRINTF("%lu:runicast message timed out when sending to %d.%d, retransmissions %d\n",
    clock_time(),to->u8[0], to->u8[1], retransmissions);
+  #if WRITE_TO_FLASH
+    records[no_records].time = clock_time();
+    linkaddr_copy(&records[no_records].from_to,to);
+    records[no_records].packet_no_retrans = retransmissions;
+    records[no_records].packet_type = payload.req_reply;
+    records[no_records].RSSI = 0;
+    no_records = no_records + 1;
+  #endif
   if(is_drone){
     PRINTF("%lu:Change Channel to %d\n",clock_time(),FFD_CHANNEL_1);
     NETSTACK_RADIO.set_value(RADIO_PARAM_CHANNEL,FFD_CHANNEL_1);
@@ -374,6 +506,15 @@ PROCESS_THREAD(main_process, ev, data)
     is_sensor = 1;
     // leds_on(LEDS_ORANGE);
   }
+
+  #if NEED_FORMATTING
+    cfs_coffee_format();
+  #endif
+
+  #if WRITE_TO_FLASH
+      SENSORS_ACTIVATE(button_sensor);
+      process_start(&read_flash,NULL);
+  #endif
 
   if(is_drone){
     PRINTF("Change Channel to %d\n",FFD_CHANNEL_1);

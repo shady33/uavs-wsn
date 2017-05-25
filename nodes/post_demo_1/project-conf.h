@@ -15,10 +15,13 @@
 #define FFD_CHANNEL_3   11      // CH-SENSORS
 
 #undef WRITE_TO_FLASH
-#define WRITE_TO_FLASH 0
+#define WRITE_TO_FLASH 1
 
 #undef NEED_FORMATTING
 #define NEED_FORMATTING 0
+
+// #define LPM_CONF_ENABLE       1
+// #define LPM_CONF_MAX_PM       2
 
 #if CONTIKI_TARGET_OPENMOTE_CC2538 
 #define COFFEE_CONF_SIZE              (CC2538_DEV_FLASH_SIZE / 2)
