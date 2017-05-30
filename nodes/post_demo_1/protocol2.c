@@ -99,7 +99,9 @@ struct packet{
     uint64_t droppedpackets;
     uint64_t data3;
     uint64_t data4;
-}payload;
+};
+
+struct packet payload_send,payload_recv;
 
 volatile int no_records = 0;
 volatile struct record {
@@ -156,9 +158,9 @@ static void callback(void *ptr)
     process_start(&send_backoff,NULL);
    }else{
     /* some dropped */
-    payload.req_reply = REQSEQ;
-    payload.droppedpackets = received_seq ^ PACKET_CHECKER;
-    packetbuf_copyfrom(&payload,sizeof(payload));
+    payload_send.req_reply = REQSEQ;
+    payload_send.droppedpackets = received_seq ^ PACKET_CHECKER;
+    packetbuf_copyfrom(&payload_send,sizeof(payload_send));
     sending = 1;
     if(runicast_send(&runicast_drone,&current_recv,MAX_RETRANSMISSIONS) != 0){
         PRINTF("Requested new packets\n");
@@ -254,8 +256,8 @@ PROCESS_THREAD(write_flash,ev,data){
 PROCESS_THREAD(send_backoff,ev,data){
     PROCESS_BEGIN();
     PRINTF("%lu:Send Backoff\n",clock_time());
-    payload.req_reply = BACKOFF;
-    packetbuf_copyfrom(&payload,sizeof(payload));
+    payload_send.req_reply = BACKOFF;
+    packetbuf_copyfrom(&payload_send,sizeof(payload_send));
     runicast_send(&runicast_drone,&current_recv,MAX_RETRANSMISSIONS);
     PROCESS_END();
 }
@@ -272,10 +274,10 @@ PROCESS_THREAD(send_C_D,ev,data){
 
     while(num_packets != 0){
         PRINTF("Sending Data %d\n",num_packets);
-        payload.req_reply = DATA;
-        payload.sequenceno = num_packets;
-        payload.totalpackets = NUM_PACKETS;
-        packetbuf_copyfrom(&payload, sizeof(payload));
+        payload_send.req_reply = DATA;
+        payload_send.sequenceno = num_packets;
+        payload_send.totalpackets = NUM_PACKETS;
+        packetbuf_copyfrom(&payload_send, sizeof(payload_send));
         sending = 1;
         if(unicast_send(&unicast_drone,&addr) != 0){
             PRINTF("Normal Data: %d\n",num_packets);
@@ -289,10 +291,10 @@ PROCESS_THREAD(send_C_D,ev,data){
     for(bit = 0; bit < 16; bit++){
         if ((uint16_t)data & (1 << bit)) {
            PRINTF("Sending packet: %d\n",bit);
-            payload.req_reply = REPSEQ;
-            payload.sequenceno = bit;
-            payload.totalpackets = NUM_PACKETS;
-            packetbuf_copyfrom(&payload, sizeof(payload));
+            payload_send.req_reply = REPSEQ;
+            payload_send.sequenceno = bit;
+            payload_send.totalpackets = NUM_PACKETS;
+            packetbuf_copyfrom(&payload_send, sizeof(payload_send));
             sending = 1;
             if(unicast_send(&unicast_drone,&addr) != 0){
                 PRINTF("Normal Data: %d\n",bit);
@@ -312,25 +314,25 @@ recv_unicast_drone(struct unicast_conn *c, const linkaddr_t *from)
         runicast_cancel(&runicast_drone);
     }
 
-  packetbuf_copyto(&payload);
+  packetbuf_copyto(&payload_recv);
   PRINTF("%lu:unicast message received from %d.%d, RSSI:%d Packetno:%d\n",
-   clock_time(),from->u8[0], from->u8[1],(signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI),payload.sequenceno);
+   clock_time(),from->u8[0], from->u8[1],(signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI),payload_recv.sequenceno);
   linkaddr_copy(&current_recv,from);
-  if(!(received_seq & (1 << payload.sequenceno))){
-    received_seq = received_seq | (1 << payload.sequenceno);
+  if(!(received_seq & (1 << payload_recv.sequenceno))){
+    received_seq = received_seq | (1 << payload_recv.sequenceno);
   }
 
     #if WRITE_TO_FLASH
         records[no_records].time = clock_time();
         linkaddr_copy(&records[no_records].from_to,from);
-        records[no_records].packet_type = payload.req_reply;
+        records[no_records].packet_type = payload_recv.req_reply;
         records[no_records].RSSI = packetbuf_attr(PACKETBUF_ATTR_RSSI);
-        records[no_records].packet_no_retrans = payload.sequenceno;
+        records[no_records].packet_no_retrans = payload_recv.sequenceno;
         no_records = no_records + 1;
     #endif
 
 
-  if(received_seq == (1 << payload.sequenceno)){
+  if(received_seq == (1 << payload_recv.sequenceno)){
     /* Start timer */
     ctimer_restart(&timer);
     ctimer_set(&timer, CLOCK_SECOND * WAITFORALLPACKETS, callback, NULL);
@@ -356,30 +358,30 @@ static const struct unicast_callbacks unicast_drone_callbacks = {recv_unicast_dr
 static void
 recv_runicast_drone(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
 {
-  packetbuf_copyto(&payload);
+  packetbuf_copyto(&payload_recv);
   PRINTF("%lu:runicast message received from %d.%d, seqno %d RSSI:%d Packet type:%d\n",
-   clock_time(),from->u8[0], from->u8[1], seqno,(signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI),payload.req_reply);
+   clock_time(),from->u8[0], from->u8[1], seqno,(signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI),payload_recv.req_reply);
 
     #if WRITE_TO_FLASH
         records[no_records].time = clock_time();
         linkaddr_copy(&records[no_records].from_to,from);
-        records[no_records].packet_type = payload.req_reply;
+        records[no_records].packet_type = payload_recv.req_reply;
         records[no_records].RSSI = packetbuf_attr(PACKETBUF_ATTR_RSSI);
         records[no_records].packet_no_retrans = 0;
         no_records = no_records + 1;
     #endif
 
-  if(is_drone && payload.req_reply == REPLY){
+  if(is_drone && payload_recv.req_reply == REPLY){
     stbroadcast_cancel(&stbroadcast_drone);
     leds_off(LEDS_GREEN);
     if(!runicast_is_transmitting(&runicast_drone)){
         PRINTF("%lu:Sending Runicast message to %d.%d\n",clock_time(), from->u8[0],from->u8[1]);
-        payload.req_reply = ACCEPT;
-        packetbuf_copyfrom(&payload,sizeof(payload));
+        payload_send.req_reply = ACCEPT;
+        packetbuf_copyfrom(&payload_send,sizeof(payload_send));
         runicast_send(&runicast_drone,from,MAX_RETRANSMISSIONS);
         leds_on(LEDS_YELLOW);
     }
-  }else if(is_coordinator && payload.req_reply == ACCEPT){
+  }else if(is_coordinator && payload_recv.req_reply == ACCEPT){
     if(runicast_is_transmitting(c)){
         runicast_cancel(c);
     }
@@ -387,9 +389,9 @@ recv_runicast_drone(struct runicast_conn *c, const linkaddr_t *from, uint8_t seq
     /* Switch channels */
     ctimer_restart(&timer);
     ctimer_set(&timer, CLOCK_SECOND * 2, change_send, NULL);
-  }else if(is_coordinator && payload.req_reply == REQSEQ){
-    process_start(&send_C_D,(void *)payload.droppedpackets);
-  }else if(is_coordinator && payload.req_reply == BACKOFF){
+  }else if(is_coordinator && payload_recv.req_reply == REQSEQ){
+    process_start(&send_C_D,(void *)payload_recv.droppedpackets);
+  }else if(is_coordinator && payload_recv.req_reply == BACKOFF){
     /* Start backoff timer */
     leds_on(LEDS_YELLOW);
     allowed_to_send = 0;
@@ -408,7 +410,7 @@ sent_runicast_drone(struct runicast_conn *c, const linkaddr_t *to, uint8_t retra
         records[no_records].time = clock_time();
         linkaddr_copy(&records[no_records].from_to,to);
         records[no_records].packet_no_retrans = retransmissions;
-        records[no_records].packet_type = payload.req_reply;
+        records[no_records].packet_type = payload_send.req_reply;
         records[no_records].RSSI = 0;
         no_records = no_records + 1;
     #endif
@@ -416,15 +418,15 @@ sent_runicast_drone(struct runicast_conn *c, const linkaddr_t *to, uint8_t retra
   if(is_drone){
     /* Sent ACCEPT and BACKOFF packet */
     /* Switch channels? */
-    if(payload.req_reply == ACCEPT){
+    if(payload_send.req_reply == ACCEPT){
         PRINTF("%lu:Change Channel to %d\n",clock_time(),FFD_CHANNEL_2);
         NETSTACK_RADIO.set_value(RADIO_PARAM_CHANNEL,FFD_CHANNEL_2);
         leds_off(LEDS_YELLOW);
-    }else if(payload.req_reply == BACKOFF){
+    }else if(payload_send.req_reply == BACKOFF){
         PRINTF("%lu:Change Channel to %d\n",clock_time(),FFD_CHANNEL_1);
         NETSTACK_RADIO.set_value(RADIO_PARAM_CHANNEL,FFD_CHANNEL_1);
-        payload.req_reply = REQUEST;
-        packetbuf_copyfrom(&payload,sizeof(payload));
+        payload_send.req_reply = REQUEST;
+        packetbuf_copyfrom(&payload_send,sizeof(payload_send));
         stbroadcast_send_stubborn(&stbroadcast_drone, DRONE_STUBBORN_TIME);
         leds_on(LEDS_GREEN);
     #if WRITE_TO_FLASH
@@ -444,15 +446,15 @@ timedout_runicast_drone(struct runicast_conn *c, const linkaddr_t *to, uint8_t r
     records[no_records].time = clock_time();
     linkaddr_copy(&records[no_records].from_to,to);
     records[no_records].packet_no_retrans = retransmissions;
-    records[no_records].packet_type = payload.req_reply;
+    records[no_records].packet_type = payload_send.req_reply;
     records[no_records].RSSI = 0;
     no_records = no_records + 1;
   #endif
   if(is_drone){
     PRINTF("%lu:Change Channel to %d\n",clock_time(),FFD_CHANNEL_1);
     NETSTACK_RADIO.set_value(RADIO_PARAM_CHANNEL,FFD_CHANNEL_1);
-    payload.req_reply = REQUEST;
-    packetbuf_copyfrom(&payload,sizeof(payload));
+    payload_send.req_reply = REQUEST;
+    packetbuf_copyfrom(&payload_send,sizeof(payload_send));
     stbroadcast_send_stubborn(&stbroadcast_drone, DRONE_STUBBORN_TIME);
     leds_on(LEDS_GREEN);
   }
@@ -471,8 +473,8 @@ recv_stbroadcast_drone(struct stbroadcast_conn *c)
     linkaddr_t addr;
     addr.u8[0] = DRONE0;
     addr.u8[1] = DRONE1;
-    payload.req_reply = REPLY;
-    packetbuf_copyfrom(&payload,sizeof(payload));
+    payload_send.req_reply = REPLY;
+    packetbuf_copyfrom(&payload_send,sizeof(payload_send));
     PRINTF("Sending Runicast to Drone\n");
     runicast_send(&runicast_drone,&addr,MAX_RETRANSMISSIONS);  
   }
@@ -532,8 +534,8 @@ PROCESS_THREAD(main_process, ev, data)
     stbroadcast_open(&stbroadcast_drone, 137, &stbroadcast_drone_callbacks);
     runicast_open(&runicast_drone, 144, &runicast_drone_callbacks);
     unicast_open(&unicast_drone, 140, &unicast_drone_callbacks);
-    payload.req_reply = REQUEST;
-    packetbuf_copyfrom(&payload,sizeof(payload));
+    payload_send.req_reply = REQUEST;
+    packetbuf_copyfrom(&payload_send,sizeof(payload_send));
     stbroadcast_send_stubborn(&stbroadcast_drone, DRONE_STUBBORN_TIME);
     leds_on(LEDS_GREEN);
   }else if(is_coordinator){
