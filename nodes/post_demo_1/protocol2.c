@@ -191,6 +191,7 @@ PROCESS_THREAD(read_flash,ev,data){
                 }else{
                     PRINTF("Read Properly\n");
                 }
+                PRINTF("Read Bytes:%d\n",r);
                 for(int i = 0; i < (r/sizeof(struct record)) + 1 ; i++){
                     PRINTF("%lu: %d.%d Packet_Type:%d PacketNo_Noretrans:%d RSSI:%d\n",records[i].time,records[i].from_to.u8[0],records[i].from_to.u8[1],
                             records[i].packet_type,records[i].packet_no_retrans,records[i].RSSI);
@@ -213,6 +214,11 @@ PROCESS_THREAD(write_flash,ev,data){
     int fd;
     int r;
     fd = cfs_open(FILENAME, CFS_WRITE | CFS_APPEND);
+    cfs_offset_t size = cfs_get_seek(fd);
+    if(size%(sizeof(struct record)) != 0){
+        int new_seek = ((size / sizeof(struct record)) + 1) * sizeof(struct record);
+        size = cfs_seek(fd,new_seek,CFS_SEEK_SET);
+    }
     if(fd < 0) {
         PRINTF("failed to open %s\n", FILENAME);
         fd = cfs_open(FILENAME, CFS_READ | CFS_WRITE);
