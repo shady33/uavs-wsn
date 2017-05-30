@@ -192,7 +192,11 @@ PROCESS_THREAD(read_flash,ev,data){
                     PRINTF("Read Properly\n");
                 }
                 PRINTF("Read Bytes:%d\n",r);
-                for(int i = 0; i < (r/sizeof(struct record)) + 1 ; i++){
+                int num = (r/sizeof(struct record));
+                if(r%sizeof(struct record) != 0){
+                    num = num + 1;
+                }
+                for(int i = 0; i < num ; i++){
                     PRINTF("%lu: %d.%d Packet_Type:%d PacketNo_Noretrans:%d RSSI:%d\n",records[i].time,records[i].from_to.u8[0],records[i].from_to.u8[1],
                             records[i].packet_type,records[i].packet_no_retrans,records[i].RSSI);
                 }
