@@ -2,8 +2,8 @@
 % Current values are in mA, Voltage is in Volts and Power is in mVA, time
 % is in Seconds
 
-demoMAC()
-
+% demoMAC()
+protocol2()
 % function TSCHMAC()
 %     clear all;
 % 
@@ -35,6 +35,59 @@ function val = toState(mode)
             val = 'TX';
     end
 end
+
+function channel_check()
+    update_power(idle_state(1),0,0.003);
+end
+
+function send_broadcast()
+    update_power(switch_tx_rx(0),0,0.003);
+    update_power(sense_send_message(),0,0.15);
+    update_power(switch_tx_rx(1),0,0.003);
+end
+
+function receive_packet()
+    update_power(idle_state(1),0,0.15);
+end
+
+function protocol2()
+    clear all;
+
+    global P_total timex P_mode P_needed VDD;
+    define_constants();
+    
+    update_power(0,0,1);
+    update_power(turn_on_node(),0,0.340);
+    update_power(turn_on_radio(),0,0.05);
+    update_power(idle_state(0),0,0.130);
+    for i = 1:8
+	channel_check();
+    update_power(idle_state(0),0,0.130);
+    end
+    send_broadcast();
+    update_power(idle_state(0),0,0.130);
+    receive_packet();
+    update_power(idle_state(0),0,0.5);
+    send_broadcast();
+    update_power(idle_state(0),0,0.5);
+    receive_packet();
+    update_power(idle_state(0),0,0.5);
+    send_broadcast();
+    update_power(idle_state(0),0,0.5);
+    
+    figure
+    hold on;
+    stairs(timex,(P_needed/VDD),'r-');
+    hold off;
+    xlabel('time(s)');
+    ylabel('Current(mA)');
+    
+%     for n=1:((size(timex,2)/2) - 1)
+%         text(timex(n*2),P_needed(n*2)/VDD,toState(P_mode(n)),'FontSize', 20)
+%     end
+    trapz(timex,P_needed) % Energy needed!
+end
+
 function demoMAC()
     clear all;
 
