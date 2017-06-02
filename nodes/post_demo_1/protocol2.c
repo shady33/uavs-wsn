@@ -62,11 +62,12 @@
 #define NUMRECORDS sizeof(coords) / sizeof(struct coord)
 
 /* Timings */
-#define MAX_RETRANSMISSIONS 31
+#define MAX_RETRANSMISSIONS 15
 #define DRONE_STUBBORN_TIME CLOCK_SECOND
 #define WAITFORALLPACKETS   5
-#define BACKOFF_TIME 10
-#define POWER_NODES -7
+#define BACKOFF_TIME 30
+#define POWER_NODES -15
+#define WAITFORBACKOFF 15
 
 /* Number of packets to send */
 #define NUM_PACKETS 1
@@ -88,8 +89,8 @@ struct coord{
     uint8_t first;
     uint8_t second;
 };
-struct coord coords[] = {{0xEC,0xB6},{0x9F,0x7F},{0xE9,0x94}};
-// struct coord coords[] = {{0x2,0x0},{0x3,0x0}};
+struct coord coords[] = {{0xEC,0xB6},{0x9F,0x7F},{0xE9,0x94},{0x72,0x88},{0x6B,0x83}};
+// struct coord coords[] = {{0x2,0x0},{0x3,0x0},{0xA,0x0}};
 
 struct packet{
     uint16_t data5;
@@ -122,17 +123,46 @@ static struct unicast_conn unicast_drone;
 volatile uint16_t num_packets = NUM_PACKETS;
 volatile uint64_t received_seq = 0;
 static struct ctimer timer;
+static struct ctimer timer_completed;
 volatile linkaddr_t current_recv;
 volatile int allowed_to_send = 1;
+volatile int waitng_for_packets = 0;
 /*---------------------------------------------------------------------------*/
+#if WRITE_TO_FLASH
 PROCESS(write_flash, "Write To flash");
 PROCESS(read_flash, "Read flash");
+#endif
 PROCESS(send_C_D, "Send Coordinator to Drone process");
 PROCESS(send_backoff, "Send Backoff");
 PROCESS(main_process, "main process");
 AUTOSTART_PROCESSES(&main_process);
 /*---------------------------------------------------------------------------*/
-static void change_send(void *ptr){
+static void callback_nopacketrecieved(void *ptr)
+{
+    PRINTF("No packets received\n");
+    ctimer_stop(&timer);
+    waitng_for_packets = 0;
+    PRINTF("%lu:Change Channel to %d\n",clock_time(),FFD_CHANNEL_1);
+    NETSTACK_RADIO.set_value(RADIO_PARAM_CHANNEL,FFD_CHANNEL_1);
+    payload_send.req_reply = REQUEST;
+    packetbuf_copyfrom(&payload_send,sizeof(payload_send));
+    stbroadcast_send_stubborn(&stbroadcast_drone, DRONE_STUBBORN_TIME);
+    leds_on(LEDS_GREEN);
+}
+/*---------------------------------------------------------------------------*/
+static void callback_switch(void *ptr)
+{
+    PRINTF("Switch Timer\n");
+    ctimer_stop(&timer_completed);
+    allowed_to_send = 1;
+    num_packets = NUM_PACKETS;
+    PRINTF("%lu:Change Channel to %d\n",clock_time(),FFD_CHANNEL_1);
+    NETSTACK_RADIO.set_value(RADIO_PARAM_CHANNEL,FFD_CHANNEL_1);
+    leds_off(LEDS_YELLOW);
+}
+/*---------------------------------------------------------------------------*/
+static void change_send(void *ptr)
+{
     PRINTF("%lu:Change Channel to %d\n",clock_time(),FFD_CHANNEL_2);
     NETSTACK_RADIO.set_value(RADIO_PARAM_CHANNEL,FFD_CHANNEL_2);
     process_start(&send_C_D,NULL);
@@ -169,7 +199,8 @@ static void callback(void *ptr)
 }
 /*---------------------------------------------------------------------------*/
 #if WRITE_TO_FLASH
-PROCESS_THREAD(read_flash,ev,data){
+PROCESS_THREAD(read_flash,ev,data)
+{
   PROCESS_BEGIN();
 
     while(1){
@@ -213,7 +244,8 @@ PROCESS_THREAD(read_flash,ev,data){
 #endif
 /*---------------------------------------------------------------------------*/
 #if WRITE_TO_FLASH
-PROCESS_THREAD(write_flash,ev,data){
+PROCESS_THREAD(write_flash,ev,data)
+{
     PROCESS_BEGIN();
 
     PRINTF("Going to Write to File\n");
@@ -253,7 +285,8 @@ PROCESS_THREAD(write_flash,ev,data){
 }
 #endif
 /*---------------------------------------------------------------------------*/
-PROCESS_THREAD(send_backoff,ev,data){
+PROCESS_THREAD(send_backoff,ev,data)
+{
     PROCESS_BEGIN();
     PRINTF("%lu:Send Backoff\n",clock_time());
     payload_send.req_reply = BACKOFF;
@@ -262,7 +295,8 @@ PROCESS_THREAD(send_backoff,ev,data){
     PROCESS_END();
 }
 /*---------------------------------------------------------------------------*/
-PROCESS_THREAD(send_C_D,ev,data){
+PROCESS_THREAD(send_C_D,ev,data)
+{
   PROCESS_BEGIN();
 
     linkaddr_t addr;
@@ -333,6 +367,7 @@ recv_unicast_drone(struct unicast_conn *c, const linkaddr_t *from)
 
 
   if(received_seq == (1 << payload_recv.sequenceno)){
+    waitng_for_packets = 0;
     /* Start timer */
     ctimer_restart(&timer);
     ctimer_set(&timer, CLOCK_SECOND * WAITFORALLPACKETS, callback, NULL);
@@ -351,6 +386,10 @@ sent_unicast_drone(struct unicast_conn *c, int status, int num_tx)
 {
   PRINTF("unicast message sent status %d\n",status);
   sending = 0;
+  if(num_packets == 0){
+    ctimer_set(&timer_completed, CLOCK_SECOND * WAITFORBACKOFF,callback_switch,NULL);
+    ctimer_restart(&timer_completed);
+  }
 }
 static const struct unicast_callbacks unicast_drone_callbacks = {recv_unicast_drone,
                    sent_unicast_drone};
@@ -395,6 +434,7 @@ recv_runicast_drone(struct runicast_conn *c, const linkaddr_t *from, uint8_t seq
     /* Start backoff timer */
     leds_on(LEDS_YELLOW);
     allowed_to_send = 0;
+    ctimer_stop(&timer_completed);
     ctimer_restart(&timer);
     ctimer_set(&timer, CLOCK_SECOND * BACKOFF_TIME, backoff, NULL);
   }
@@ -421,6 +461,12 @@ sent_runicast_drone(struct runicast_conn *c, const linkaddr_t *to, uint8_t retra
     if(payload_send.req_reply == ACCEPT){
         PRINTF("%lu:Change Channel to %d\n",clock_time(),FFD_CHANNEL_2);
         NETSTACK_RADIO.set_value(RADIO_PARAM_CHANNEL,FFD_CHANNEL_2);
+
+        /* Wait for WAITFORALLPACKETS in FFD_CHANNEL_2 */
+        ctimer_restart(&timer);
+        ctimer_set(&timer, CLOCK_SECOND * WAITFORALLPACKETS, callback_nopacketrecieved, NULL);
+        waitng_for_packets = 1;
+
         leds_off(LEDS_YELLOW);
     }else if(payload_send.req_reply == BACKOFF){
         PRINTF("%lu:Change Channel to %d\n",clock_time(),FFD_CHANNEL_1);
@@ -450,7 +496,13 @@ timedout_runicast_drone(struct runicast_conn *c, const linkaddr_t *to, uint8_t r
     records[no_records].RSSI = 0;
     no_records = no_records + 1;
   #endif
+
   if(is_drone){
+    if(waitng_for_packets){
+        ctimer_stop(&timer);
+        waitng_for_packets = 0;    
+    }
+    
     PRINTF("%lu:Change Channel to %d\n",clock_time(),FFD_CHANNEL_1);
     NETSTACK_RADIO.set_value(RADIO_PARAM_CHANNEL,FFD_CHANNEL_1);
     payload_send.req_reply = REQUEST;
@@ -458,6 +510,7 @@ timedout_runicast_drone(struct runicast_conn *c, const linkaddr_t *to, uint8_t r
     stbroadcast_send_stubborn(&stbroadcast_drone, DRONE_STUBBORN_TIME);
     leds_on(LEDS_GREEN);
   }
+  leds_on(LEDS_RED);
 }
 static const struct runicast_callbacks runicast_drone_callbacks = {recv_runicast_drone,
                    sent_runicast_drone,
@@ -497,7 +550,7 @@ PROCESS_THREAD(main_process, ev, data)
   PROCESS_BEGIN();
 
   NETSTACK_RADIO.set_value(RADIO_PARAM_TXPOWER,POWER_NODES);
-
+  
   /* Receiver node: do nothing */
   int j;
   for(j = 0 ; j < NUMRECORDS; j++){
@@ -507,7 +560,9 @@ PROCESS_THREAD(main_process, ev, data)
         leds_on(LEDS_RED);
     }
   }
-  
+  int val;
+  NETSTACK_RADIO.get_value(RADIO_PARAM_TXPOWER,&val);
+  PRINTF("Power: %d\n", val);
   if(linkaddr_node_addr.u8[0] == DRONE0 &&
      linkaddr_node_addr.u8[1] == DRONE1) {
     is_drone = 1;
