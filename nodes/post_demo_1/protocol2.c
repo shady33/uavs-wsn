@@ -32,9 +32,9 @@
 
 /**
  * \file
- *         Reliable single-hop unicast example
+ *         Master's Thesis Code for UAVs with WSN
  * \author
- *         Adam Dunkels <adam@sics.se>
+ *         Laksh Bhatia <bhatialaksh3@gmail.com>
  */
 
 #define DEBUG 1
@@ -62,16 +62,17 @@
 #define NUMRECORDS sizeof(coords) / sizeof(struct coord)
 
 /* Timings */
-#define MAX_RETRANSMISSIONS 15
+#define MAX_RETRANSMISSIONS 7
 #define DRONE_STUBBORN_TIME CLOCK_SECOND
 #define WAITFORALLPACKETS   5
 #define BACKOFF_TIME 30
-#define POWER_NODES -15
+#define POWER_NODES 0
 #define WAITFORBACKOFF 15
 
 /* Number of packets to send */
 #define NUM_PACKETS 1
 #define PACKET_CHECKER 0x2
+#define TOTAL_PAKCETS 1
 
 /* Packet Types */
 #define REQUEST 1
@@ -89,7 +90,12 @@ struct coord{
     uint8_t first;
     uint8_t second;
 };
-struct coord coords[] = {{0xEC,0xB6},{0x9F,0x7F},{0xE9,0x94},{0x72,0x88},{0x6B,0x83}};
+struct coord coords[] = {{0xEC,0xB6},{0x9F,0x7F},{0xE9,0x94},{0x72,0x88},
+                         {0x6B,0x83},{0x9F,0x7B},{0x3E,0x82},{0x0E,0x76},
+                         {0x2E,0x5C},{0xFB,0xCE},{0xDB,0x58},{0x4D,0x52},
+                         {0xD2,0x64},{0xCE,0x90},{0x85,0x7E},{0x6B,0x83},
+                         {0x17,0x73}
+                     };
 // struct coord coords[] = {{0x2,0x0},{0x3,0x0},{0xA,0x0}};
 
 struct packet{
@@ -111,7 +117,7 @@ volatile struct record {
     signed short RSSI;
     uint16_t packet_type;
     uint16_t packet_no_retrans;
-}records[10];
+}records[20];
 
 volatile int sending = 0;
 int is_drone = 0;
@@ -127,6 +133,7 @@ static struct ctimer timer_completed;
 volatile linkaddr_t current_recv;
 volatile int allowed_to_send = 1;
 volatile int waitng_for_packets = 0;
+volatile int total_packets = TOTAL_PAKCETS;
 /*---------------------------------------------------------------------------*/
 #if WRITE_TO_FLASH
 PROCESS(write_flash, "Write To flash");
@@ -289,6 +296,9 @@ PROCESS_THREAD(send_backoff,ev,data)
 {
     PROCESS_BEGIN();
     PRINTF("%lu:Send Backoff\n",clock_time());
+    if(runicast_is_transmitting(&runicast_drone)){
+        runicast_cancel(&runicast_drone);
+    }
     payload_send.req_reply = BACKOFF;
     packetbuf_copyfrom(&payload_send,sizeof(payload_send));
     runicast_send(&runicast_drone,&current_recv,MAX_RETRANSMISSIONS);
@@ -386,6 +396,11 @@ sent_unicast_drone(struct unicast_conn *c, int status, int num_tx)
 {
   PRINTF("unicast message sent status %d\n",status);
   sending = 0;
+    #if TOTAL_PAKCETS
+    if(status == 0){
+        total_packets = total_packets - 1;        
+    }
+    #endif
   if(num_packets == 0){
     ctimer_set(&timer_completed, CLOCK_SECOND * WAITFORBACKOFF,callback_switch,NULL);
     ctimer_restart(&timer_completed);
@@ -509,6 +524,10 @@ timedout_runicast_drone(struct runicast_conn *c, const linkaddr_t *to, uint8_t r
     packetbuf_copyfrom(&payload_send,sizeof(payload_send));
     stbroadcast_send_stubborn(&stbroadcast_drone, DRONE_STUBBORN_TIME);
     leds_on(LEDS_GREEN);
+
+    #if WRITE_TO_FLASH
+        process_start(&write_flash,NULL);
+    #endif
   }
   leds_on(LEDS_RED);
 }
@@ -522,6 +541,9 @@ recv_stbroadcast_drone(struct stbroadcast_conn *c)
   PRINTF("%lu:stbroadcast message received RSSI:%d\n",
      clock_time(),(signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI));
 
+  #if TOTAL_PAKCETS
+  if(total_packets > 0){
+  #endif
   if(allowed_to_send){
     linkaddr_t addr;
     addr.u8[0] = DRONE0;
@@ -531,6 +553,9 @@ recv_stbroadcast_drone(struct stbroadcast_conn *c)
     PRINTF("Sending Runicast to Drone\n");
     runicast_send(&runicast_drone,&addr,MAX_RETRANSMISSIONS);  
   }
+  #if TOTAL_PAKCETS
+    }
+  #endif
 }
 static void
 sent_stbroadcast_drone(struct stbroadcast_conn *c)
