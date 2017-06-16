@@ -1,14 +1,14 @@
 % Modelling of broadcast duration, speed of drone, range of
 % communication, number of packets, time for sending stuff
 
-hit_location = 80;          %distance
-desired_speed = 10;          %m/s
-broadcast = 10;             %seconds
+hit_location = 90;          %distance
+desired_speed = 20;          %m/s
+broadcast = 1;             %seconds
 range = 100;                %meters
 
-disp(strcat('Possible or not with changing hit distance:',num2str(changing_distance(hit_location,desired_speed,broadcast,range))));
+% disp(strcat('Possible or not with changing hit distance:',num2str(changing_distance(hit_location,desired_speed,broadcast,range))));
 disp(strcat('Possible or not with changing speed:',num2str(changing_speed(hit_location,desired_speed,broadcast,range))));
-disp(strcat('Possible or not with changing range:',num2str(changing_range(hit_location,desired_speed,broadcast,range))));
+% disp(strcat('Possible or not with changing range:',num2str(changing_range(hit_location,desired_speed,broadcast,range))));
 
 %changes hit location i.e when the packet is received
 function possible = changing_distance(hit_location,speed,broadcast,range)
@@ -135,42 +135,20 @@ end
 
 % changes speed of drone
 function possible = changing_speed(hit_location,desired_speed,broadcast,range)
-    max_speed = 10;                 %m/s
-    num_packets = 2;   
-    time_per_packet = 0.06;    %seconds 
-    %3.47s for 10seconds timer,2s backoff
-    %1s for 15 packets of size 49bytes each
-    total_time_packets = num_packets * time_per_packet;
-    check_packets = 2;          %seconds
-    if(check_packets < total_time_packets)
-        disp('Check packets smaller than total time required to send');
-        possible = false;
-        return;
-    end
-    
-    total_time = check_packets;
-    
-	%dropped packets
-    r = floor((4)*rand(1));
-	if r(1) ~= 0
-        str = strcat('Dropped packets:',num2str(r(1)));
-        disp(str);
-        total_time = total_time + (r(1) + 1) * time_per_packet;
-    end 
-    total_time = total_time + 1 * time_per_packet; %sending backoff packet
+    max_speed = 50;                 %m/s
+    total_time = 3.2;
         
     output1 = zeros(100,1);
     no_of_broadcasts = zeros(100,1);
     j = 0;
-    for i = linspace(1,max_speed,100)
+    for i = linspace(1,max_speed,1000)
         j = j + 1;
         output1(j) = ((range - hit_location)/i) - total_time;
         no_of_broadcasts(j) = range / (broadcast * i);
     end
-    
     figure;
     hold on;
-    plot(linspace(1,max_speed,100),output1);
+    plot(linspace(1,max_speed,1000),output1);
     ax = gca;                        % gets the current axes
     ax.XAxisLocation = 'origin';     % sets them to zero
     ax.YAxisLocation = 'origin';     % sets them to zero
@@ -178,16 +156,17 @@ function possible = changing_speed(hit_location,desired_speed,broadcast,range)
     ylabel('Free time/Possible backoff times');
 %     title('Plot that shows the possible backoff times by varying the speed of the drone');
     title('Varying Speed of Drone');
-    plot(desired_speed,output1(desired_speed*10),'r*');
+    yl = get(gca,'YLim');
+    plot([desired_speed desired_speed],yl);
+    
     dim = [0.2 0.5 0.3 0.3];
     str = {'Fixed Parameters',strcat('Hit Distance: ',num2str(hit_location)),strcat('Range: ',num2str(range))};
     annotation('textbox',dim,'String',str,'FitBoxToText','on');
     
 %     disp(no_of_broadcasts);
-    if output1(desired_speed * 10) > 0
+    if output1(desired_speed*10) > 0
         possible = true;
     else
         possible = false;
     end
-    backoff = 2;                %seconds
 end

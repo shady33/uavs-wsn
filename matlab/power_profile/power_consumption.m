@@ -3,7 +3,8 @@
 % is in Seconds
 
 % demoMAC()
-protocol2()
+% protocol2()
+protocol3()
 % function TSCHMAC()
 %     clear all;
 % 
@@ -41,13 +42,60 @@ function channel_check()
 end
 
 function send_broadcast()
-    update_power(switch_tx_rx(0),0,0.003);
+    update_power(switch_tx_rx(0),0,0.03);
     update_power(sense_send_message(),0,0.15);
-    update_power(switch_tx_rx(1),0,0.003);
+    update_power(switch_tx_rx(1),0,0.03);
 end
 
 function receive_packet()
-    update_power(idle_state(1),0,0.15);
+    update_power(idle_state(1),0,0.25);
+end
+
+function protocol3()
+    clear all;
+
+    global P_total timex P_mode P_needed VDD;
+    define_constants();
+    
+    update_power(0,0,2);
+%     update_power(turn_on_node(),0,1);
+    update_power(turn_on_radio(),0,1.3);
+    update_power(idle_state(0),0,0.2);
+    channel_check();
+    update_power(idle_state(0),0,0.25);
+    
+	send_broadcast();
+    update_power(idle_state(0),0,0.25);
+        channel_check();
+    update_power(idle_state(0),0,0.25);
+        channel_check();
+    update_power(idle_state(0),0,0.25);
+        channel_check();
+    update_power(idle_state(0),0,0.25);
+%     update_power(idle_state(0),0,0.130);
+    receive_packet();
+	update_power(idle_state(0),0,0.5);
+            channel_check();
+    update_power(idle_state(0),0,0.25);
+        channel_check();
+    update_power(idle_state(0),0,0.25);
+        channel_check();
+    update_power(idle_state(0),0,0.25);
+    send_broadcast();
+    update_power(idle_state(0),0,0.5);
+	receive_packet();
+	update_power(idle_state(0),0,0.5);
+	send_broadcast();
+	update_power(idle_state(0),0,0.5);
+    
+    figure
+    data_csv = csvread('PowerProfile.csv');
+    plot(data_csv(:,4),data_csv(:,6))
+    hold on;
+stairs(timex,(P_needed/VDD),'r-','LineWidth',2);
+    hold off;
+    xlabel('time(s)');
+    ylabel('Current(mA)');
 end
 
 function protocol2()
@@ -76,12 +124,14 @@ function protocol2()
     update_power(idle_state(0),0,0.5);
     
     figure
+    data_csv = csvread('PowerProfile.csv');
+    plot(data_csv(:,4),data_csv(:,6),'o-')
     hold on;
     stairs(timex,(P_needed/VDD),'r-');
     hold off;
     xlabel('time(s)');
     ylabel('Current(mA)');
-    
+    P_needed
 %     for n=1:((size(timex,2)/2) - 1)
 %         text(timex(n*2),P_needed(n*2)/VDD,toState(P_mode(n)),'FontSize', 20)
 %     end
@@ -145,7 +195,7 @@ function define_constants()
     global VDD;
     VDD = 3;
     global P_off_on_mcu P_off_on_sensor P_rx_tx_radio P_tx_rx_radio P_off_on_radio;
-    P_off_on_mcu = 15 * VDD; % Node in RX State
+    P_off_on_mcu = 10 * VDD; % Node in RX State
     P_off_on_sensor = 0;
     P_rx_tx_radio = 1 * VDD; % RX to TX
     P_tx_rx_radio = 1 * VDD; % TX to RX
