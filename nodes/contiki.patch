@@ -1,0 +1,167 @@
+diff --git a/core/cfs/cfs-coffee.c b/core/cfs/cfs-coffee.c
+index 474b4741d..62d3caaef 100644
+--- a/core/cfs/cfs-coffee.c
++++ b/core/cfs/cfs-coffee.c
+@@ -1006,7 +1006,7 @@ cfs_open(const char *name, int flags)
+   fdp->flags |= flags;
+   fdp->offset = flags & CFS_APPEND ? fdp->file->end : 0;
+   fdp->file->references++;
+-
++  
+   return fd;
+ }
+ /*---------------------------------------------------------------------------*/
+@@ -1021,6 +1021,18 @@ cfs_close(int fd)
+ }
+ /*---------------------------------------------------------------------------*/
+ cfs_offset_t
++cfs_get_seek(int fd)
++{
++  struct file_desc *fdp;
++  cfs_offset_t new_offset;
++  if(!FD_VALID(fd)) {
++    return -1;
++  }
++  fdp = &coffee_fd_set[fd];
++  return fdp->file->end;
++}
++/*---------------------------------------------------------------------------*/
++cfs_offset_t
+ cfs_seek(int fd, cfs_offset_t offset, int whence)
+ {
+   struct file_desc *fdp;
+diff --git a/core/cfs/cfs.h b/core/cfs/cfs.h
+index 3e2452c61..63e68af17 100644
+--- a/core/cfs/cfs.h
++++ b/core/cfs/cfs.h
+@@ -279,6 +279,8 @@ CCIF int cfs_readdir(struct cfs_dir *dirp, struct cfs_dirent *dirent);
+ CCIF void cfs_closedir(struct cfs_dir *dirp);
+ #endif
+ 
++cfs_offset_t cfs_get_seek(int fd);
++
+ #endif /* CFS_H_ */
+ 
+ /** @} */
+diff --git a/core/net/mac/contikimac/contikimac.c b/core/net/mac/contikimac/contikimac.c
+index 7088e8e54..f3333df35 100644
+--- a/core/net/mac/contikimac/contikimac.c
++++ b/core/net/mac/contikimac/contikimac.c
+@@ -232,6 +232,11 @@ static int we_are_receiving_burst = 0;
+ 
+ #define ACK_LEN 3
+ 
++#if CONTIKIMAC_CHANNEL_CHANGE
++volatile int alternate = 0;
++volatile int ack_sent = 0;
++#endif
++
+ #include <stdio.h>
+ static struct rtimer rt;
+ static struct pt pt;
+@@ -242,14 +247,16 @@ static volatile uint8_t contikimac_keep_radio_on = 0;
+ static volatile unsigned char we_are_sending = 0;
+ static volatile unsigned char radio_is_on = 0;
+ 
+-#define DEBUG 0
+-#if DEBUG
++#define DEBUG 
++#if DEBUG 0
+ #include <stdio.h>
+ #define PRINTF(...) printf(__VA_ARGS__)
+ #define PRINTDEBUG(...) printf(__VA_ARGS__)
++#define PRINTADDR(addr) PRINTF(" %02x%02x:%02x%02x:%02x%02x:%02x%02x ", ((uint8_t *)addr)[0], ((uint8_t *)addr)[1], ((uint8_t *)addr)[2], ((uint8_t *)addr)[3], ((uint8_t *)addr)[4], ((uint8_t *)addr)[5], ((uint8_t *)addr)[6], ((uint8_t *)addr)[7])
+ #else
+ #define PRINTF(...)
+ #define PRINTDEBUG(...)
++#define PRINTADDR(...)
+ #endif
+ 
+ #if CONTIKIMAC_CONF_COMPOWER
+@@ -414,6 +421,22 @@ powercycle(struct rtimer *t, void *ptr)
+ 
+     packet_seen = 0;
+ 
++#if CONTIKIMAC_CHANNEL_CHANGE
++    if(we_are_sending == 0 && we_are_receiving_burst == 0){
++      // Do the channel switching thing here
++      radio_value_t current_channel;
++      NETSTACK_RADIO.get_value(RADIO_PARAM_CHANNEL,&current_channel); 
++      if(current_channel != FFD_CHANNEL_2){
++        alternate++;
++        if(alternate % 2 == 0){
++          NETSTACK_RADIO.set_value(RADIO_PARAM_CHANNEL,FFD_CHANNEL_1);
++        }else{
++          NETSTACK_RADIO.set_value(RADIO_PARAM_CHANNEL,FFD_CHANNEL_3);
++        }
++      }
++    }
++#endif
++
+     for(count = 0; count < CCA_COUNT_MAX; ++count) {
+       if(we_are_sending == 0 && we_are_receiving_burst == 0) {
+         powercycle_turn_radio_on();
+@@ -602,6 +625,14 @@ send_packet(mac_callback_t mac_callback, void *mac_callback_ptr,
+ #endif /* NETSTACK_CONF_WITH_IPV6 */
+   }
+ 
++#if CONTIKIMAC_CHANNEL_CHANGE
++    // if(packetbuf_addr(PACKETBUF_ADDR_RECEIVER)->u8[0] == 10){
++      // NETSTACK_RADIO.set_value(RADIO_PARAM_CHANNEL,FFD_CHANNEL_2);
++    // }else{
++      // NETSTACK_RADIO.set_value(RADIO_PARAM_CHANNEL,26);
++    // }
++#endif
++
+   if(!packetbuf_attr(PACKETBUF_ATTR_IS_CREATED_AND_SECURED)) {
+     packetbuf_set_attr(PACKETBUF_ATTR_MAC_ACK, 1);
+     if(NETSTACK_FRAMER.create() < 0) {
+@@ -1002,7 +1033,7 @@ input_packet(void)
+       compower_clear(&current_packet);
+ #endif /* CONTIKIMAC_CONF_COMPOWER */
+ 
+-      PRINTDEBUG("contikimac: data (%u)\n", packetbuf_datalen());
++        PRINTDEBUG("contikimac: data (%u) \n", packetbuf_datalen());
+ 
+ #if CONTIKIMAC_SEND_SW_ACK
+       {
+@@ -1013,7 +1044,7 @@ input_packet(void)
+             linkaddr_cmp((linkaddr_t *)&info154.dest_addr,
+                 &linkaddr_node_addr)) {
+           uint8_t ackdata[ACK_LEN] = {0, 0, 0};
+-
++          PRINTDEBUG("contikimac: Sending ACK\n");
+           we_are_sending = 1;
+           ackdata[0] = FRAME802154_ACKFRAME;
+           ackdata[1] = 0;
+diff --git a/core/net/rime/runicast.c b/core/net/rime/runicast.c
+index 4dc1abeec..f4d5722ed 100644
+--- a/core/net/rime/runicast.c
++++ b/core/net/rime/runicast.c
+@@ -247,4 +247,13 @@ runicast_send(struct runicast_conn *c, const linkaddr_t *receiver,
+   return ret;
+ }
+ /*---------------------------------------------------------------------------*/
++void 
++runicast_cancel(struct runicast_conn *c)
++{
++  c->rxmit = 0;
++  stunicast_cancel(&c->c);
++  c->sndnxt = (c->sndnxt + 1) % (1 << RUNICAST_PACKET_ID_BITS);
++  c->is_tx = 0;
++}
++/*---------------------------------------------------------------------------*/
+ /** @} */
+diff --git a/core/net/rime/runicast.h b/core/net/rime/runicast.h
+index a7e199435..3d6f6a7d3 100644
+--- a/core/net/rime/runicast.h
++++ b/core/net/rime/runicast.h
+@@ -112,6 +112,8 @@ int runicast_send(struct runicast_conn *c, const linkaddr_t *receiver,
+ 
+ uint8_t runicast_is_transmitting(struct runicast_conn *c);
+ 
++void runicast_cancel(struct runicast_conn *c);
++
+ #endif /* RUNICAST_H_ */
+ /** @} */
+ /** @} */
