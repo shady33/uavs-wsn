@@ -4,8 +4,8 @@
 #undef QUEUEBUF_CONF_NUM
 #define QUEUEBUF_CONF_NUM 20
 
-// #define UAV 1
-#define FFD_OPEN 1
+#define UAV 1
+// #define FFD_OPEN 1
 // #define FFD_TELO 1
 #if UAV
 #undef CONTIKIMAC_CHANNEL_CHANGE
@@ -15,7 +15,7 @@
 #define NETSTACK_CONF_RDC_CHANNEL_CHECK_RATE 8
 
 #undef WRITE_TO_FLASH
-#define WRITE_TO_FLASH 0
+#define WRITE_TO_FLASH 1
 
 #elif FFD_OPEN
 #undef CONTIKIMAC_CHANNEL_CHANGE

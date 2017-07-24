@@ -66,13 +66,13 @@
 #define DRONE_STUBBORN_TIME CLOCK_SECOND
 #define WAITFORALLPACKETS   5
 #define BACKOFF_TIME 30
-#define POWER_NODES 0
+#define POWER_NODES 7
 #define WAITFORBACKOFF 15
 
 /* Number of packets to send */
 #define NUM_PACKETS 1
 #define PACKET_CHECKER 0x2
-#define TOTAL_PAKCETS 1
+#define TOTAL_PAKCETS 0
 
 /* Packet Types */
 #define REQUEST 1
