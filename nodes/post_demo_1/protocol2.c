@@ -37,7 +37,7 @@
  *         Laksh Bhatia <bhatialaksh3@gmail.com>
  */
 
-#define DEBUG 1
+#define DEBUG 0
 #if DEBUG
 #include <stdio.h>
 #define PRINTF(...) printf(__VA_ARGS__)
@@ -134,6 +134,7 @@ volatile linkaddr_t current_recv;
 volatile int allowed_to_send = 1;
 volatile int waitng_for_packets = 0;
 volatile int total_packets = TOTAL_PAKCETS;
+volatile int replypacketnumber = 1;
 /*---------------------------------------------------------------------------*/
 #if WRITE_TO_FLASH
 PROCESS(write_flash, "Write To flash");
@@ -237,12 +238,12 @@ PROCESS_THREAD(read_flash,ev,data)
                     num = num + 1;
                 }
                 for(int i = 0; i < num ; i++){
-                    PRINTF("%lu: %d.%d Packet_Type:%d PacketNo_Noretrans:%d RSSI:%d\n",records[i].time,records[i].from_to.u8[0],records[i].from_to.u8[1],
+                    printf("%lu: %d.%d Packet_Type:%d PacketNo_Noretrans:%d RSSI:%d\n",records[i].time,records[i].from_to.u8[0],records[i].from_to.u8[1],
                             records[i].packet_type,records[i].packet_no_retrans,records[i].RSSI);
                 }
 
             }
-        PRINTF("Closing the file\n");
+        printf("Closing the file\n");
         cfs_close(fd);
         }
     }
@@ -421,7 +422,7 @@ recv_runicast_drone(struct runicast_conn *c, const linkaddr_t *from, uint8_t seq
         linkaddr_copy(&records[no_records].from_to,from);
         records[no_records].packet_type = payload_recv.req_reply;
         records[no_records].RSSI = packetbuf_attr(PACKETBUF_ATTR_RSSI);
-        records[no_records].packet_no_retrans = 0;
+        records[no_records].packet_no_retrans = payload_recv.sequenceno;
         no_records = no_records + 1;
     #endif
 
@@ -549,7 +550,9 @@ recv_stbroadcast_drone(struct stbroadcast_conn *c)
     addr.u8[0] = DRONE0;
     addr.u8[1] = DRONE1;
     payload_send.req_reply = REPLY;
+    payload_send.sequenceno = replypacketnumber;
     packetbuf_copyfrom(&payload_send,sizeof(payload_send));
+    replypacketnumber = replypacketnumber + 1;
     PRINTF("Sending Runicast to Drone\n");
     runicast_send(&runicast_drone,&addr,MAX_RETRANSMISSIONS);  
   }
